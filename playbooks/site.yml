@@ -1,0 +1,17 @@
+---
+- name: test
+  hosts: wazuh_clusters
+  gather_facts: true
+  tasks:
+    - name: Show distro and kernel
+      ansible.builtin.debug:
+        msg: "{{ ansible_distribution }} {{ ansible_distribution_version }} ({{ ansible_kernel }})"
+
+    - name: Confirm rootless Podman is installed
+      ansible.builtin.command: podman --version
+      register: podman_ver
+      changed_when: false
+      failed_when: podman_ver.rc != 0
+
+    - name: Report Podman version
+      ansible.builtin.debug: var=podman_ver.stdout

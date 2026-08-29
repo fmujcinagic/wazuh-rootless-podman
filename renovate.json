@@ -1,0 +1,34 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Europe/Vienna",
+  "schedule": ["after 22:00"],
+  "major": {
+    "enabled": false
+  },
+  "packageRules": [
+    {
+      "groupName": "Wazuh images",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": [
+        "wazuh/wazuh-indexer",
+        "wazuh/wazuh-dashboard",
+        "wazuh/wazuh-manager",
+        "wazuh/wazuh-agent"
+      ],
+      "separateMinorPatch": true,
+      "extends": ["docker:pinDigests"],
+      "commitMessagePrefix": "chore(wazuh-images): "
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["^WAZUH_VERSION$"],
+      "matchStrings": ["^(?<currentValue>\\S+)\\s*$"],
+      "datasourceTemplate": "docker",
+      "packageNameTemplate": "wazuh/wazuh-manager",
+      "depNameTemplate": "wazuh version"
+    }
+  ]
+}
