@@ -1,3 +1,6 @@
+# Wazuh single-node stack adapted for rootless Podman.
+# Based on the Wazuh Docker single-node compose.
+# Wazuh App Copyright (C) 2017, Wazuh Inc. (License GPLv2)
 services:
   wazuh.manager:
     image: docker.io/wazuh/wazuh-manager:4.14.7

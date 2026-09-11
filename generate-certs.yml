@@ -1,3 +1,6 @@
+# Certificate generator for the Wazuh indexer, manager and dashboard.
+# Based on the Wazuh Docker certificate generator.
+# Wazuh App Copyright (C) 2017, Wazuh Inc. (License GPLv2)
 services:
   generator:
     image: docker.io/wazuh/wazuh-certs-generator:0.0.4
