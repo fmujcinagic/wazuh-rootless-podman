@@ -3,6 +3,29 @@
 Single-node Wazuh (indexer, manager, dashboard) running entirely as a
 rootless Podman user. No root daemon, no privileged ports, no Docker.
 
+## Why rootless Podman
+
+Wazuh is usually deployed with Docker. On production hosts, and on RHEL and
+its derivatives in particular, that is a problem:
+
+* The Docker daemon runs as root and its socket is root equivalent. Adding a
+  user to the `docker` group grants full root access, which is not acceptable
+  under least privilege or a hardened baseline.
+* Workarounds that run the rootful Docker daemon as a normal user, such as
+  `dockerrootplease` (https://github.com/chrisfosterelli/dockerrootplease),
+  only relocate the root daemon. They depend on a root-owned socket, can break
+  with SELinux enforcing, cgroup or storage driver changes, and are not
+  supported by the distribution.
+* Docker is not part of the standard RHEL repositories, while Podman is.
+  Running the stack with Podman stays inside the supported package set and the
+  existing SELinux policy.
+
+Podman runs containers under the calling user with a user namespace and no
+daemon, so the stack can be deployed and upgraded by a regular user without
+granting root or installing Docker. Rootless containers cannot bind ports
+below 1024, which is why the dashboard is published on 8443 and syslog on
+5514.
+
 ## Prerequisites
 
 * Podman 4.4 or newer
@@ -13,9 +36,6 @@ rootless Podman user. No root daemon, no privileged ports, no Docker.
 ```
 sudo sysctl -w vm.max_map_count=262144
 ```
-
-The dashboard is published on 8443 and syslog on 5514 because rootless Podman
-cannot bind ports below 1024 by default.
 
 ## Generate certificates
 
@@ -69,6 +89,13 @@ volumes in `podman-compose.yml`:
 
 Decoders that must run before the built-in JSON decoder are named with a low
 prefix (for example `0005a-`) so they sort before `0006-json_decoders.xml`.
+
+## Credits
+
+The compose file and the files under `config/` are derived from the official
+Wazuh Docker repository (https://github.com/wazuh/wazuh-docker), Copyright (C)
+2017, Wazuh Inc., licensed under GPLv2. The rootless adaptations and this
+documentation are original. Wazuh is a trademark of Wazuh, Inc.
 
 ## Notes
 
