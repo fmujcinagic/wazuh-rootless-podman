@@ -1,4 +1,4 @@
-# Wazuh on rootless Podman
+# Wazuh Rootless Podman Deployment
 
 Since the official Wazuh documentation as of day of writing doesn't support native rootless Podman deployment this is the deployment of the single-node Wazuh (indexer, manager, dashboard) running entirely as a rootless Podman user, managed by systemd with Quadlet. This works out of the box. No root daemon, no privileged ports, no Docker.
 
