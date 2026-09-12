@@ -1,0 +1,34 @@
+[Unit]
+Description=Wazuh dashboard
+After=network-online.target wazuh-indexer.service
+Wants=network-online.target
+Requires=wazuh-indexer.service
+
+[Container]
+ContainerName=wazuh.dashboard
+Image=docker.io/wazuh/wazuh-dashboard:4.14.7
+HostName=wazuh.dashboard
+Network=wazuh.network
+PodmanArgs=--network-alias=wazuh.dashboard
+PublishPort=8443:5601
+Environment=INDEXER_USERNAME=admin
+Environment=WAZUH_API_URL=https://wazuh.manager
+Environment=DASHBOARD_USERNAME=kibanaserver
+Environment=API_USERNAME=wazuh-wui
+Secret=INDEXER_PASSWORD,type=env
+Secret=DASHBOARD_PASSWORD,type=env
+Secret=API_PASSWORD,type=env
+Volume=./config/wazuh_indexer_ssl_certs/wazuh.dashboard.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard.pem:ro
+Volume=./config/wazuh_indexer_ssl_certs/wazuh.dashboard-key.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard-key.pem:ro
+Volume=./config/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-dashboard/certs/root-ca.pem:ro
+Volume=./config/wazuh_dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro
+Volume=./config/wazuh_dashboard/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro
+Volume=wazuh-dashboard-config:/usr/share/wazuh-dashboard/data/wazuh/config
+Volume=wazuh-dashboard-custom:/usr/share/wazuh-dashboard/plugins/wazuh/public/assets/custom
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target
