@@ -1,7 +1,6 @@
 # Wazuh on rootless Podman
 
-Single-node Wazuh (indexer, manager, dashboard) running entirely as a
-rootless Podman user. No root daemon, no privileged ports, no Docker.
+Since the official Wazuh documentation as of day of writing doesn't support native rootless Podman deployment this is the deployment of the single-node Wazuh (indexer, manager, dashboard) running entirely as a rootless Podman user, managed by systemd with Quadlet. This works out of the box. No root daemon, no privileged ports, no Docker.
 
 ## Why rootless Podman
 
@@ -21,15 +20,16 @@ its derivatives in particular, that is a problem:
   existing SELinux policy.
 
 Podman runs containers under the calling user with a user namespace and no
-daemon, so the stack can be deployed and upgraded by a regular user without
-granting root or installing Docker. Rootless containers cannot bind ports
-below 1024, which is why the dashboard is published on 8443 and syslog on
-5514.
+daemon. Quadlet lets systemd start and supervise the containers as user
+services, so the stack survives reboots and can be upgraded by a regular user
+without granting root or installing Docker. Rootless containers cannot bind
+ports below 1024, which is why the dashboard is published on 8443 and syslog
+on 5514.
 
 ## Prerequisites
 
 * Podman 4.4 or newer
-* podman-compose (`pipx install podman-compose`)
+* systemd 253 or newer
 * At least 4 GB of RAM for the indexer
 * `vm.max_map_count` of at least 262144
 
@@ -37,23 +37,41 @@ below 1024, which is why the dashboard is published on 8443 and syslog on
 sudo sysctl -w vm.max_map_count=262144
 ```
 
-## Generate certificates
-
-The components authenticate with TLS. Generate the certificate set once:
+## Install
 
 ```
-mkdir -p config/wazuh_indexer_ssl_certs
-podman-compose -f generate-certs.yml up
+./scripts/install.sh
 ```
 
-Certificates are written to `config/wazuh_indexer_ssl_certs/` and are ignored
-by git.
+The script generates the TLS certificates if they are missing, creates the
+Podman secrets, copies the Quadlet units to
+`~/.config/containers/systemd/`, enables lingering for the user and starts the
+three services.
 
-## Start
+To change the default passwords, export them before running the script:
 
 ```
-podman-compose up -d
+INDEXER_PASSWORD=... API_PASSWORD=... DASHBOARD_PASSWORD=... ./scripts/install.sh
 ```
+
+Changing `INDEXER_PASSWORD` or `DASHBOARD_PASSWORD` also requires updating the
+bcrypt hashes in `config/wazuh_indexer/internal_users.yml`.
+
+## Manage
+
+```
+systemctl --user status wazuh-indexer wazuh-manager wazuh-dashboard
+systemctl --user restart wazuh-manager
+journalctl --user -u wazuh-manager -f
+```
+
+To remove the services (the Podman volumes and secrets are kept):
+
+```
+./scripts/uninstall.sh
+```
+
+## Access
 
 | Service | Port | URL |
 | --- | --- | --- |
@@ -66,41 +84,68 @@ Default credentials:
 * Dashboard and indexer: `admin` / `SecretPassword`
 * Wazuh API: `wazuh-wui` / `MyS3cr37P450r.*-`
 
-Change them in `config/wazuh_indexer/internal_users.yml`,
-`config/wazuh_dashboard/wazuh.yml` and `podman-compose.yml` before any
-non-local use.
+The passwords live in the Podman secret store, not in the repository or the
+Quadlet files.
 
-## Agent enrollment
+## Agent deployment
 
-Agents connect to the manager on 1514 (events) and 1515 (enrollment). Create
-the agent group first if you use one, then point the agent at the host IP.
+`agent/run-agent.sh` deploys the stock Wazuh agent container. It mounts the
+integration collector logs read only and enrolls against the manager:
+
+```
+WAZUH_MANAGER_SERVER=<manager-ip> WAZUH_AGENT_NAME=<host> \
+  WAZUH_AGENT_GROUP=podman ./agent/run-agent.sh
+```
+
+Agents connect to the manager on 1514 (events) and 1515 (enrollment). Point the agent at the host IP. In case the other ports are available or should be used, this is configurable in the ossec.conf of the Wazuh Agent.
+
+The log directories are `~/.local/state/wazuh-podman` and
+`~/.local/state/wazuh-network`, written by the collectors from the
+integration hub repository.
 
 ## Loading integrations
 
-The stack is a plain Wazuh manager, so any custom decoders, rules and
-dashboards can be added. To mount an integration, add it to the manager
-volumes in `podman-compose.yml`:
+The stack is a plain Wazuh manager, so custom decoders, rules and dashboards
+can be added. The repository stays generic; add a Quadlet drop-in for the
+manager instead of editing the unit. You can try this with the examples for the Podman provisioning and network bandwidth monitoring that can be found
+on my Github profile:
 
-```
-    volumes:
-      - /path/to/decoders:/var/ossec/ruleset/decoders/0005a-custom.xml:ro
-      - /path/to/rules:/var/ossec/etc/rules/custom_rules.xml:ro
+```bash
+mkdir -p ~/.config/containers/systemd/wazuh-manager.container.d
+# create the e.g. file: ~/.config/containers/systemd/wazuh-manager.container.d/10-integrations.conf
+# with the following content:
+# ----
+[Container]
+Volume=/path/to/decoders:/var/ossec/ruleset/decoders/0005a-custom.xml:ro
+Volume=/path/to/rules:/var/ossec/etc/rules/custom_rules.xml:ro
+# ----
+
+systemctl --user daemon-reload
+systemctl --user restart wazuh-manager
 ```
 
 Decoders that must run before the built-in JSON decoder are named with a low
 prefix (for example `0005a-`) so they sort before `0006-json_decoders.xml`.
+This is the Quadlet naming convention. On Podman 4.x, where Quadlet drop-ins
+are not available, add the `Volume=` lines to
+`quadlet/wazuh-manager.container` before running `scripts/install.sh`.
+
+The Quadlet units were generated from the original compose file with
+`podlet compose` and then adapted for rootless use.
 
 ## Credits
 
-The compose file and the files under `config/` are derived from the official
-Wazuh Docker repository (https://github.com/wazuh/wazuh-docker), Copyright (C)
-2017, Wazuh Inc., licensed under GPLv2. The rootless adaptations and this
+The configuration files under `config/` are derived from the official Wazuh
+Docker repository (https://github.com/wazuh/wazuh-docker), Copyright (C) 2017,
+Wazuh Inc., licensed under GPLv2. The Quadlet units, scripts and this
 documentation are original. Wazuh is a trademark of Wazuh, Inc.
 
 ## Notes
 
-* Named volumes are initialized from the image, so the service users keep
-  ownership of their data.
+* Quadlet resolves relative paths in `Volume=` against the directory that
+  contains the unit file. `install.sh` symlinks the repository `config/`
+  directory into `~/.config/containers/systemd/` so the certificates keep
+  their ownership.
 * The certificates generated by `wazuh-certs-generator` are owned by the
   subordinate UIDs that map to the indexer (1000) and manager (999) users, so
   the stack must run with the default rootless mapping rather than
