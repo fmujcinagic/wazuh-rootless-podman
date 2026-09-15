@@ -1,0 +1,5 @@
+---
+# The indexer image ships the OpenSearch Security hashing tool and its own JDK.
+# The entrypoint does not expose JAVA_HOME, so both have to be pinned here.
+wazuh_indexer_hash_tool: /usr/share/wazuh-indexer/plugins/opensearch-security/tools/hash.sh
+wazuh_indexer_java_home: /usr/share/wazuh-indexer/jdk

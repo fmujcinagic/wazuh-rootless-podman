@@ -12,13 +12,21 @@
     mode: "0755"
 
 - name: Hash the indexer admin password
-  command: podman run --rm {{ wazuh_indexer_image }} /usr/share/wazuh-indexer/opensearch-security/tools/hash.sh -p {{ wazuh_indexer_password | quote }}
+  command: >-
+    podman run --rm
+    --entrypoint {{ wazuh_indexer_hash_tool }}
+    -e OPENSEARCH_JAVA_HOME={{ wazuh_indexer_java_home }}
+    {{ wazuh_indexer_image }} -p {{ wazuh_indexer_password | quote }}
   register: indexer_hash_raw
   changed_when: false
   no_log: true
 
 - name: Hash the dashboard service password
-  command: podman run --rm {{ wazuh_indexer_image }} /usr/share/wazuh-indexer/opensearch-security/tools/hash.sh -p {{ wazuh_dashboard_password | quote }}
+  command: >-
+    podman run --rm
+    --entrypoint {{ wazuh_indexer_hash_tool }}
+    -e OPENSEARCH_JAVA_HOME={{ wazuh_indexer_java_home }}
+    {{ wazuh_indexer_image }} -p {{ wazuh_dashboard_password | quote }}
   register: dashboard_hash_raw
   changed_when: false
   no_log: true
