@@ -15,6 +15,8 @@ Environment=WAZUH_MANAGER_SERVER={{ wazuh_agent_manager_host | default('wazuh.ma
 Environment=WAZUH_REGISTRATION_SERVER={{ wazuh_agent_manager_host | default('wazuh.manager', true) }}
 Environment=WAZUH_AGENT_NAME={{ wazuh_agent_name }}
 Environment=WAZUH_AGENT_GROUP={{ wazuh_agent_group }}
+Environment=WAZUH_MANAGER_PORT={{ wazuh_agent_events_port }}
+Environment=WAZUH_REGISTRATION_PORT={{ wazuh_agent_enrollment_port }}
 Volume=wazuh-agent-etc:/var/ossec/etc
 Volume=wazuh-agent-queue:/var/ossec/queue
 Volume={{ wazuh_install_root }}/agent/ossec.conf:/wazuh-config-mount/etc/ossec.conf:z
