@@ -26,50 +26,44 @@ without granting root or installing Docker. Rootless containers cannot bind
 ports below 1024, which is why the dashboard is published on 8443 and syslog
 on 5514.
 
-## Prerequisites
+## Requirements
 
-* Podman 4.4 or newer
-* systemd 253 or newer
-* At least 4 GB of RAM for the indexer
-* `vm.max_map_count` of at least 262144
+* Podman 4.4 or newer, systemd 253 or newer, cgroup v2 on the target
+* Ansible (2.17+) with the `containers.podman` and `ansible.posix`
+  collections on the machine that runs the CLI
+* At least 4 GB of RAM and `vm.max_map_count` of 262144 for the indexer
+  (the playbook sets it on the master automatically)
+* A Rocky/RHEL-family target VM; the CLI can install `podman` and `python3`
+  on a fresh machine itself
 
-```
-sudo sysctl -w vm.max_map_count=262144
-```
+## Deploy
 
-## Install
-
-```
-./scripts/install.sh
-```
-
-The script generates the TLS certificates if they are missing, creates the
-Podman secrets, copies the Quadlet units to
-`~/.config/containers/systemd/`, enables lingering for the user and starts the
-three services.
-
-To change the default passwords, export them before running the script:
+Everything goes through the interactive helper in the repository root:
 
 ```
-INDEXER_PASSWORD=... API_PASSWORD=... DASHBOARD_PASSWORD=... ./scripts/install.sh
+./wazuh.cfg
 ```
 
-The generated passwords also need a matching internal users database; for the
-Ansible deployment this is handled by regenerating the user database
-(`wazuh_regen_users`).
+1. Pick the deployment type: standalone server, worker manager + local
+   agent, or agent only.
+2. Answer the prompts for the mode (see "Node modes" below).
+3. Answer the target VM prompts (host, ssh user, sudo password, optional
+   podman storage directory). The CLI offers to install podman and python3
+   over ssh on a fresh VM, renders `ansible/deploy/inventory/hosts.yml` and
+   runs the playbook.
 
-## Manage
+The stack is deployed as a dedicated rootless `wazuh` user on the target,
+with TLS certificates generated inside the certificates-generator image, all
+secrets in the Podman secret store and linger enabled so the stack survives
+reboots. Repeat runs converge to zero changes; passwords are only re-hashed
+when the fingerprint in `vault/<host>.yml` changes.
+
+To build the offline bundle beforehand or rebuild it for a new Wazuh version,
+run the bundle playbook on an internet-connected machine and copy the result
+to the target:
 
 ```
-systemctl --user status wazuh-indexer wazuh-manager wazuh-dashboard
-systemctl --user restart wazuh-manager
-journalctl --user -u wazuh-manager -f
-```
-
-To remove the services (the Podman volumes and secrets are kept):
-
-```
-./scripts/uninstall.sh
+cd ansible/bundle && ansible-playbook build-bundle.yml
 ```
 
 ## Access
@@ -80,29 +74,50 @@ To remove the services (the Podman volumes and secrets are kept):
 | wazuh.indexer | 9200 | https://localhost:9200 |
 | wazuh.manager | 1514, 1515, 55000, 5514/udp | agents, enrollment, API, syslog |
 
-Default credentials:
+Passwords are generated on the first master run and stored in
+`ansible/deploy/vault/<host>.yml`; the verification summary at the end of a
+run prints the admin login. The passwords live in the Podman secret store,
+not in the repository or the Quadlet files.
 
-* Dashboard and indexer: `admin` / `SecretPassword`
-* Wazuh API: `wazuh-wui` / `MyS3cr37P450r.*-`
-
-The passwords live in the Podman secret store, not in the repository or the
-Quadlet files.
-
-## Agent deployment
-
-`agent/run-agent.sh` deploys the stock Wazuh agent container. It mounts the
-integration collector logs read only and enrolls against the manager:
+## Manage
 
 ```
-WAZUH_MANAGER_SERVER=<manager-ip> WAZUH_AGENT_NAME=<host> \
-  WAZUH_AGENT_GROUP=podman ./agent/run-agent.sh
+systemctl --user status wazuh-indexer wazuh-manager wazuh-dashboard
+systemctl --user restart wazuh-manager
+journalctl --user -u wazuh-manager -f
 ```
 
-Agents connect to the manager on 1514 (events) and 1515 (enrollment). Point the agent at the host IP. In case the other ports are available or should be used, this is configurable in the ossec.conf of the Wazuh Agent.
+## Node modes
 
-The log directories are `~/.local/state/wazuh-podman` and
-`~/.local/state/wazuh-network`, written by the collectors from the
-integration hub repository.
+The Ansible playbook in `ansible/deploy` knows three node modes, picked by
+the `wazuh_node_role` variable or through the interactive helper `wazuh.cfg`
+in the repository root:
+
+1. **Standalone server** (`wazuh_node_role=master`) - indexer, manager and
+   dashboard on one VM, acting as the cluster master. If a cluster key is
+   given, the manager leaves the cluster port open so workers can join.
+2. **Worker manager + local agent** (`wazuh_node_role=worker`) - joins an
+   existing master. The CLI asks for the master host, the cluster name and
+   the cluster key, plus the master's indexer admin and API passwords (the
+   worker ships its events into the master's indexer). It optionally pulls
+   `root-ca-manager.pem`, `wazuh.manager.pem` and `wazuh.manager-key.pem`
+   from the master into `/var/tmp/wazuh-worker-certs` on the target; the
+   playbook moves them into `config/wazuh_indexer_ssl_certs/` before the
+   manager starts.
+3. **Agent only** (`wazuh_node_role=agent`) - a Wazuh agent enrolled against
+   a remote manager. The CLI asks for the manager host, the events port,
+   the enrollment port, the agent name and the agent group. The agent
+   container runs with the host network, because rootless port publishing
+   does not accept container to host IP connections on every setup.
+
+All three modes reuse the same offline bundle and the same
+`ansible/deploy/deploy.yml` playbook; the playbook switches the Quadlet
+layout, the manager cluster block and the verification based on the role.
+Enrollment happens on port 1515 during agent registration, after which
+the agent pushes events to the manager on port 1514. To rotate the indexer
+passwords later, change them in the vault file and re-run the deployment
+with `wazuh_regen_users=true`; the user database is rebuilt and every
+consumer container is restarted.
 
 ## Loading integrations
 
@@ -134,45 +149,6 @@ are not available, add the `Volume=` lines to
 The Quadlet units were generated from the original compose file with
 `podlet compose` and then adapted for rootless use.
 
-## Node modes and the CLI
-
-The Ansible playbook in `ansible/deploy` knows three node modes, picked by
-the `wazuh_node_role` variable or through the interactive helper `wazuh.cfg`
-in the repository root:
-
-```
-./wazuh.cfg
-```
-
-1. **Standalone server** (`wazuh_node_role=master`) - indexer, manager and
-   dashboard on one VM, acting as the cluster master. If a cluster key is
-   given, the manager leaves the cluster port open so workers can join.
-2. **Worker manager + local agent** (`wazuh_node_role=worker`) - joins an
-   existing master. The CLI asks for the master host, the cluster name and
-   the cluster key, plus the master's indexer admin and API passwords (the
-   worker ships its events into the master's indexer). It optionally pulls
-   `root-ca-manager.pem`, `wazuh.manager.pem` and `wazuh.manager-key.pem`
-   from the master into `/var/tmp/wazuh-worker-certs` on the target; the
-   playbook moves them into `config/wazuh_indexer_ssl_certs/` before the
-   manager starts.
-3. **Agent only** (`wazuh_node_role=agent`) - a Wazuh agent enrolled against
-   a remote manager. The CLI asks for the manager host, the events port,
-   the enrollment port, the agent name and the agent group. The agent
-   container runs with the host network, because rootless port publishing
-   does not accept container to host IP connections on every setup.
-
-Common prompts for every mode: the target VM ssh host, the ssh user, the
-sudo password for that user (passed along to ansible-playbook) and an
-optional Podman storage directory override. Nothing is hardcoded; every
-prompt shows a sensible default. The CLI also offers to install podman and
-python3 over ssh for a fresh VM before deploying.
-
-All three modes reuse the same offline bundle and the same
-`ansible/deploy/deploy.yml` playbook; the playbook switches the Quadlet
-layout, the manager cluster block and the verification based on the role.
-Enrollment happens on port 1515 during agent registration, after which
-the agent pushes events to the manager on port 1514.
-
 ## Credits
 
 The configuration files under `config/` are derived from the official Wazuh
@@ -182,12 +158,10 @@ documentation are original. Wazuh is a trademark of Wazuh, Inc.
 
 ## Notes
 
-* Quadlet resolves relative paths in `Volume=` against the directory that
-  contains the unit file. `install.sh` symlinks the repository `config/`
-  directory into `~/.config/containers/systemd/` so the certificates keep
-  their ownership.
 * The certificates generated by `wazuh-certs-generator` are owned by the
   subordinate UIDs that map to the indexer (1000) and manager (999) users, so
   the stack must run with the default rootless mapping rather than
   `--userns=keep-id`.
-* The indexer needs `vm.max_map_count`. Verify it before starting.
+* The agent container runs on the host network; see the agent mode above.
+* A worker joins by cluster key and needs the master's certificates; both
+  come from the master deployment and are requested by the CLI.
