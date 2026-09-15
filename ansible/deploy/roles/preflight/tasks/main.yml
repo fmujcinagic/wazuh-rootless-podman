@@ -9,7 +9,7 @@
 
 - name: Check that podman is new enough for Quadlet drop-ins and secrets
   assert:
-    that: podman_version_check.stdout_words[2] is version('4.4', '>=')
+    that: podman_version_check.stdout.split()[2] is version('4.4', '>=')
     fail_msg: "podman {{ podman_version_check.stdout }} is too old, 4.4 or newer is required"
 
 - name: Check the systemd version
@@ -75,7 +75,6 @@
 - name: Wait for the runtime directory
   wait_for:
     path: "{{ wazuh_run_dir }}"
-    state: directory
     timeout: 30
 
 - name: Read the current vm.max_map_count
