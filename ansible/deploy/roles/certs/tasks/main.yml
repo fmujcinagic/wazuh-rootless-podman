@@ -34,19 +34,28 @@
     group: "{{ wazuh_group }}"
     mode: "0755"
 
-- name: Generate certificates with the indexer image
+- name: Extract the certificate tool from the indexer image
+  shell: >-
+    podman run --rm --entrypoint cat {{ wazuh_indexer_image }}
+    {{ wazuh_cert_tool_path }} > {{ wazuh_config_dir }}/wazuh-certs-tool.sh
+  changed_when: true
+
+- name: Generate certificates with the generator image
   command: >-
-    podman run --rm --user 0
+    podman run --rm
     --entrypoint /bin/bash
-    -v {{ wazuh_config_dir }}:/work
-    -v {{ wazuh_cert_dir }}:/certificates
-    {{ wazuh_indexer_image }}
+    -v {{ wazuh_config_dir }}:/work:z
+    -v {{ wazuh_cert_dir }}:/certificates:z
+    {{ certs_generator_image }}
     /work/generate-certs-offline.sh
   register: cert_gen
   changed_when: true
   when: wazuh_regen_certs or not root_ca.stat.exists
 
-- name: Remove the certificate script
+- name: Remove the helper scripts
   file:
-    path: "{{ wazuh_config_dir }}/generate-certs-offline.sh"
+    path: "{{ wazuh_config_dir }}/{{ item }}"
     state: absent
+  loop:
+    - generate-certs-offline.sh
+    - wazuh-certs-tool.sh

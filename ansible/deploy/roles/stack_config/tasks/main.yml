@@ -38,7 +38,9 @@
 
 - name: Fail when the hashes did not come out of the tool
   assert:
-    that: wazuh_indexer_hash and wazuh_dashboard_hash
+    that:
+      - wazuh_indexer_hash | length > 0
+      - wazuh_dashboard_hash | length > 0
     fail_msg: "hash.sh output could not be parsed from the indexer image"
 
 - name: Render the indexer users

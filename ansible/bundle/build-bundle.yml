@@ -15,11 +15,13 @@
   vars:
     repo_root: "{{ playbook_dir }}/../.."
     wazuh_version: "4.14.7"
+    certs_generator_image: "docker.io/wazuh/wazuh-certs-generator:0.0.4"
     bundle_images:
       - "docker.io/wazuh/wazuh-indexer:{{ wazuh_version }}"
       - "docker.io/wazuh/wazuh-manager:{{ wazuh_version }}"
       - "docker.io/wazuh/wazuh-dashboard:{{ wazuh_version }}"
       - "docker.io/wazuh/wazuh-agent:{{ wazuh_version }}"
+      - "{{ certs_generator_image }}"
     bundle_collections:
       - containers.podman
       - ansible.posix

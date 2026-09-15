@@ -18,11 +18,11 @@ Environment=API_USERNAME=wazuh-wui
 Secret=INDEXER_PASSWORD,type=env
 Secret=DASHBOARD_PASSWORD,type=env
 Secret=API_PASSWORD,type=env
-Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/wazuh.dashboard.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard.pem:ro
-Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/wazuh.dashboard-key.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard-key.pem:ro
-Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-dashboard/certs/root-ca.pem:ro
-Volume={{ wazuh_config_dir }}/wazuh_dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro
-Volume={{ wazuh_config_dir }}/wazuh_dashboard/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro
+Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/wazuh.dashboard.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard.pem:ro,z
+Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/wazuh.dashboard-key.pem:/usr/share/wazuh-dashboard/certs/wazuh-dashboard-key.pem:ro,z
+Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-dashboard/certs/root-ca.pem:ro,z
+Volume={{ wazuh_config_dir }}/wazuh_dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro,z
+Volume={{ wazuh_config_dir }}/wazuh_dashboard/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro,z
 Volume=wazuh-dashboard-config:/usr/share/wazuh-dashboard/data/wazuh/config
 Volume=wazuh-dashboard-custom:/usr/share/wazuh-dashboard/plugins/wazuh/public/assets/custom
 

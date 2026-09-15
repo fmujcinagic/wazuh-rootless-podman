@@ -1,0 +1,5 @@
+---
+# Where the certificate helper lives inside the indexer image. The indexer
+# image cannot run it (no openssl), so it is only used as a source; the
+# generation happens inside the certs-generator image which ships openssl.
+wazuh_cert_tool_path: /usr/share/wazuh-indexer/plugins/opensearch-security/tools/wazuh-certs-tool.sh
