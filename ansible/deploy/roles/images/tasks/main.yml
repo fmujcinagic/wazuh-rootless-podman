@@ -2,33 +2,22 @@
 # Load the bundled image archives into the rootless store, skipping images
 # that are already present at the pinned tag.
 
-- name: Check which of the needed images are already loaded
-  command: podman image exists {{ item }}
-  args:
-    warn: false
-  loop: "{{ wazuh_server_images }}"
-  register: image_exists
-  failed_when: image_exists.rc not in (0, 1)
+- name: List the images already in the store
+  command: podman images --format "{{ '{{' }} .Repository {{ '}}' }}:{{ '{{' }} .Tag {{ '}}' }}"
+  register: loaded_images
   changed_when: false
 
-- name: Find the archive for each missing image
+- name: Work out which archives still need loading
   set_fact:
     wazuh_image_archives: >-
-      {{ (wazuh_image_archives | default([])) + [ {
-           'ref': item.0,
-           'path': wazuh_stage_dir ~ '/' ~ (wazuh_bundle_manifest.images
-             | selectattr('ref', 'equalto', item.0) | map(attribute='path') | first)
-         } ] }}
-  loop: "{{ wazuh_server_images | zip(image_exists.results) | list }}"
-  loop_control:
-    label: "{{ item.0 }}"
-  when: item.1.rc != 0
+      {{ wazuh_bundle_manifest.images
+         | selectattr('ref', 'in', wazuh_server_images)
+         | rejectattr('ref', 'in', loaded_images.stdout_lines)
+         | list }}
 
 - name: Load the image archives
-  containers.podman.podman_image:
-    name: "{{ item.ref }}"
-    path: "{{ item.path }}"
-    load: true
-  loop: "{{ wazuh_image_archives | default([]) }}"
+  command: podman load -i {{ wazuh_stage_dir }}/{{ item.path }}
+  loop: "{{ wazuh_image_archives }}"
   loop_control:
     label: "{{ item.ref }}"
+  changed_when: true

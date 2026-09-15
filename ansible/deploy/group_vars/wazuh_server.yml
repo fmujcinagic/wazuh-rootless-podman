@@ -1,6 +1,5 @@
 # Version pins. The bundle is built against these, keep both in sync.
 wazuh_version: "4.14.7"
-certs_generator_image: "docker.io/wazuh/wazuh-certs-generator:0.0.4"
 
 # Rootless user that owns the whole stack.
 wazuh_user: wazuh
@@ -37,7 +36,6 @@ wazuh_server_images:
   - "{{ wazuh_indexer_image }}"
   - "{{ wazuh_manager_image }}"
   - "{{ wazuh_dashboard_image }}"
-  - "{{ certs_generator_image }}"
 wazuh_config_dir: "{{ wazuh_install_root }}/config"
 
 # Passwords. Leave unset to have them generated on the first run and stored
