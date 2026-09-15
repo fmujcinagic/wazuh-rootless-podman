@@ -4,7 +4,7 @@
 
 - name: Check the manager API
   uri:
-    url: "https://127.0.0.1:{{ wazuh_api_port }}/"
+    url: "https://127.0.0.1:{{ wazuh_api_port }}/security/user/authenticate?raw=true"
     user: wazuh-wui
     password: "{{ wazuh_api_password }}"
     force_basic_auth: true
