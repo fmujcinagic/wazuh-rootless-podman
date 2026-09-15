@@ -16,25 +16,16 @@ chmod 700 /work/wazuh-certs-tool.sh
 cd /work
 source /work/wazuh-certs-tool.sh -A
 
-node_names=$(cert_parseYaml /work/config.yml | grep -E 'nodes[_]+server[_]+[0-9]+=' | sed -e 's/nodes__server__[0-9]=//' | sed 's/"//g')
-
 echo "Moving created certificates to the destination directory"
 cp /work/wazuh-certificates/* /certificates/
-echo "Changing certificate permissions"
-chmod -R 500 /certificates
-chmod -R 400 /certificates/*
-echo "Setting UID indexer and dashboard"
-chown 1000:1000 /certificates/*
-echo "Setting UID for wazuh manager"
+echo "Setting permissions"
+# Each container reads its key pair as a different (subordinate mapped) uid,
+# so a strict per-uid chown is not portable. The files live under a 0700 home
+# directory, therefore 0644 keeps them private to the host while leaving them
+# readable for the indexer (1000) and manager (999) containers.
+chmod 0644 /certificates/*
 cp /certificates/root-ca.pem /certificates/root-ca-manager.pem
 cp /certificates/root-ca.key /certificates/root-ca-manager.key
-chown 999:999 /certificates/root-ca-manager.pem
-chown 999:999 /certificates/root-ca-manager.key
-
-for i in ${node_names}; do
-    chown 999:999 "/certificates/${i}.pem"
-    chown 999:999 "/certificates/${i}-key.pem"
-done
 
 rm -rf /work/wazuh-certificates /work/config.yml /work/wazuh-certificates-tool.log
 

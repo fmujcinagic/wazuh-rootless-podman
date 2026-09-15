@@ -16,7 +16,7 @@
   file:
     path: "{{ wazuh_cert_dir }}"
     state: absent
-  when: wazuh_regen_certs or not root_ca.stat.exists
+  when: wazuh_regen_certs | bool or not root_ca.stat.exists
 
 - name: Create the certificate directory
   file:
@@ -50,7 +50,7 @@
     /work/generate-certs-offline.sh
   register: cert_gen
   changed_when: true
-  when: wazuh_regen_certs or not root_ca.stat.exists
+  when: wazuh_regen_certs | bool or not root_ca.stat.exists
 
 - name: Remove the helper scripts
   file:
