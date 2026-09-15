@@ -96,6 +96,30 @@
     scope: user
   when: users_rendered is changed
 
+- name: Wait for the indexer to answer after the restart
+  uri:
+    url: "https://127.0.0.1:{{ wazuh_indexer_port }}/"
+    validate_certs: false
+    status_code: [200, 401]
+    client_cert: "{{ wazuh_install_root }}/config/wazuh_indexer_ssl_certs/admin.pem"
+    client_key: "{{ wazuh_install_root }}/config/wazuh_indexer_ssl_certs/admin-key.pem"
+  register: indexer_reloaded
+  until: indexer_reloaded.status in [200, 401]
+  retries: 30
+  delay: 20
+  changed_when: false
+  when: users_rendered is changed
+
+- name: Restart the manager and dashboard for the rebuilt credentials
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: restarted
+    scope: user
+  loop:
+    - wazuh-manager.service
+    - wazuh-dashboard.service
+  when: users_rendered is changed
+
 - name: Render the dashboard API config
   template:
     src: wazuh.yml.j2
