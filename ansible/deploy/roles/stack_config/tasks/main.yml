@@ -11,6 +11,13 @@
     group: "{{ wazuh_group }}"
     mode: "0755"
 
+- name: Check for a rendered indexer user database
+  stat:
+    path: "{{ wazuh_install_root }}/config/wazuh_indexer/internal_users.yml"
+  register: users_file
+
+# The hash tool salts freshly every run, so a rebuilt database never looks
+# byte identical. Only render it for a new install or on explicit regen.
 - name: Hash the indexer admin password
   command: >-
     podman run --rm
@@ -20,6 +27,7 @@
   register: indexer_hash_raw
   changed_when: false
   no_log: true
+  when: wazuh_regen_users | bool or not users_file.stat.exists
 
 - name: Hash the dashboard service password
   command: >-
@@ -30,11 +38,13 @@
   register: dashboard_hash_raw
   changed_when: false
   no_log: true
+  when: wazuh_regen_users | bool or not users_file.stat.exists
 
 - name: Extract the bcrypt hashes
   set_fact:
     wazuh_indexer_hash: "{{ indexer_hash_raw.stdout | regex_findall('\\$2[aby]\\$[0-9]{2}\\$[./A-Za-z0-9]{53}') | last }}"
     wazuh_dashboard_hash: "{{ dashboard_hash_raw.stdout | regex_findall('\\$2[aby]\\$[0-9]{2}\\$[./A-Za-z0-9]{53}') | last }}"
+  when: wazuh_regen_users | bool or not users_file.stat.exists
 
 - name: Fail when the hashes did not come out of the tool
   assert:
@@ -42,6 +52,7 @@
       - wazuh_indexer_hash | length > 0
       - wazuh_dashboard_hash | length > 0
     fail_msg: "hash.sh output could not be parsed from the indexer image"
+  when: wazuh_regen_users | bool or not users_file.stat.exists
 
 - name: Render the indexer users
   template:
@@ -50,6 +61,15 @@
     owner: "{{ wazuh_user }}"
     group: "{{ wazuh_group }}"
     mode: "0644"
+  register: users_rendered
+  when: wazuh_regen_users | bool or not users_file.stat.exists
+
+- name: Reload the indexer user database over a restart
+  ansible.builtin.systemd_service:
+    name: wazuh-indexer.service
+    state: restarted
+    scope: user
+  when: users_rendered is changed
 
 - name: Render the dashboard API config
   template:

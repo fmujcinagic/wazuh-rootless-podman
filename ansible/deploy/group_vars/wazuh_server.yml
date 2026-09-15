@@ -50,3 +50,5 @@ wazuh_secrets_file: "{{ playbook_dir }}/vault/{{ inventory_hostname }}.yml"
 wazuh_enable_firewall: true
 # Regenerate certificates even if they already exist (wipes the CA).
 wazuh_regen_certs: false
+# Re-hash the indexer passwords and reload the user database.
+wazuh_regen_users: false

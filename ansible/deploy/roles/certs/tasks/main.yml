@@ -12,11 +12,16 @@
     path: "{{ wazuh_cert_dir }}/root-ca.pem"
   register: root_ca
 
+- name: Decide whether certificates have to be generated
+  set_fact:
+    wazuh_generate_certs: "{{ wazuh_regen_certs | bool or not root_ca.stat.exists }}"
+
 - name: Wipe the certificate directory for regeneration
   file:
     path: "{{ wazuh_cert_dir }}"
     state: absent
-  when: wazuh_regen_certs | bool or not root_ca.stat.exists
+  when: wazuh_generate_certs | bool
+
 
 - name: Create the certificate directory
   file:
@@ -33,12 +38,21 @@
     owner: "{{ wazuh_user }}"
     group: "{{ wazuh_group }}"
     mode: "0755"
+  when: wazuh_generate_certs | bool
 
 - name: Extract the certificate tool from the indexer image
-  shell: >-
+  command: >-
     podman run --rm --entrypoint cat {{ wazuh_indexer_image }}
-    {{ wazuh_cert_tool_path }} > {{ wazuh_config_dir }}/wazuh-certs-tool.sh
-  changed_when: true
+    {{ wazuh_cert_tool_path }}
+  register: cert_tool
+  when: wazuh_generate_certs | bool
+
+- name: Drop the extracted tool next to the generate script
+  copy:
+    dest: "{{ wazuh_config_dir }}/wazuh-certs-tool.sh"
+    mode: "0755"
+    content: "{{ cert_tool.stdout }}"
+  when: wazuh_generate_certs | bool
 
 - name: Generate certificates with the generator image
   command: >-
@@ -49,8 +63,7 @@
     {{ certs_generator_image }}
     /work/generate-certs-offline.sh
   register: cert_gen
-  changed_when: true
-  when: wazuh_regen_certs | bool or not root_ca.stat.exists
+  when: wazuh_generate_certs | bool
 
 - name: Remove the helper scripts
   file:
@@ -59,3 +72,4 @@
   loop:
     - generate-certs-offline.sh
     - wazuh-certs-tool.sh
+  when: wazuh_generate_certs | bool

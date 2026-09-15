@@ -61,6 +61,7 @@
 
 - name: Install the project tree
   shell: mkdir -p {{ wazuh_install_root }} && tar -cf - -C {{ wazuh_stage_dir }}/project . | tar -xf - -C {{ wazuh_install_root }}
+  when: bundle_unpack is changed
 
 - name: Hand the tree to the wazuh user
   file:
@@ -68,3 +69,4 @@
     owner: "{{ wazuh_user }}"
     group: "{{ wazuh_group }}"
     recurse: true
+  when: bundle_unpack is changed
