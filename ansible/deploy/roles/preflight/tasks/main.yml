@@ -1,0 +1,160 @@
+---
+# Root-side checks and one-time host setup. Everything here runs as root
+# over sudo; the stack itself never does.
+
+- name: Check that podman is installed
+  command: podman --version
+  register: podman_version_check
+  changed_when: false
+
+- name: Check that podman is new enough for Quadlet drop-ins and secrets
+  assert:
+    that: podman_version_check.stdout_words[2] is version('4.4', '>=')
+    fail_msg: "podman {{ podman_version_check.stdout }} is too old, 4.4 or newer is required"
+
+- name: Check the systemd version
+  command: systemctl --version
+  register: systemd_version_check
+  changed_when: false
+
+- name: Assert systemd is 253 or newer
+  assert:
+    that: systemd_version_check.stdout_lines[0].split()[1] is version('253', '>=')
+    fail_msg: "systemd {{ systemd_version_check.stdout_lines[0] }} is too old, 253 or newer is required"
+
+- name: Check for cgroup v2
+  stat:
+    path: /sys/fs/cgroup/cgroup.controllers
+  register: cgroupv2
+
+- name: Assert unified cgroup hierarchy
+  assert:
+    that: cgroupv2.stat.exists
+    fail_msg: "host runs cgroup v1, rootless podman + quadlet need cgroup v2"
+
+- name: Ensure the wazuh group exists
+  group:
+    name: "{{ wazuh_group }}"
+    system: true
+  when: wazuh_create_user
+
+- name: Ensure the wazuh user exists
+  user:
+    name: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    system: false
+    shell: /bin/bash
+    create_home: true
+  when: wazuh_create_user
+  register: wazuh_user_add
+
+- name: Read the passwd entry
+  command: getent passwd {{ wazuh_user }}
+  register: wazuh_passwd
+  changed_when: false
+
+- name: Derive home, uid and run dir
+  set_fact:
+    wazuh_home: "{{ (wazuh_passwd.stdout | split(':'))[5] }}"
+    wazuh_uid: "{{ (wazuh_passwd.stdout | split(':'))[2] }}"
+    wazuh_run_dir: "/run/user/{{ (wazuh_passwd.stdout | split(':'))[2] }}"
+
+- name: Check the subordinate id ranges
+  command: grep -c '^{{ wazuh_user }}:' /etc/subuid
+  register: subuid_check
+  failed_when: subuid_check.rc > 1
+  changed_when: false
+
+- name: Assign subordinate ids if useradd did not
+  command: usermod --add-subuids 100000-165535 --add-subgids 100000-165535 {{ wazuh_user }}
+  when: subuid_check.stdout | int == 0
+
+- name: Enable lingering so the user manager survives without a login
+  command: loginctl enable-linger {{ wazuh_user }}
+
+- name: Wait for the runtime directory
+  wait_for:
+    path: "{{ wazuh_run_dir }}"
+    state: directory
+    timeout: 30
+
+- name: Read the current vm.max_map_count
+  command: sysctl -n vm.max_map_count
+  register: max_map_count
+  changed_when: false
+
+- name: Raise vm.max_map_count for the indexer
+  ansible.posix.sysctl:
+    name: vm.max_map_count
+    value: "262144"
+    sysctl_file: /etc/sysctl.d/60-wazuh.conf
+    state: present
+  when: max_map_count.stdout | int < 262144
+
+- name: Check whether SELinux is enforcing
+  command: getenforce
+  register: selinux_mode
+  changed_when: false
+  failed_when: false
+
+- name: Require semanage when a custom storage root must be labelled
+  command: command -v semanage
+  register: semanage_bin
+  failed_when: semanage_bin.rc != 0
+  changed_when: false
+  when:
+    - wazuh_storage_root | length > 0
+    - selinux_mode.stdout | default('Disabled') == 'Enforcing'
+
+- name: Create the storage root
+  file:
+    path: "{{ wazuh_storage_root }}"
+    state: directory
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0750"
+  when: wazuh_storage_root | length > 0
+
+- name: Check for an existing file context on the storage root
+  command: semanage fcontext -l
+  register: fcontext_list
+  changed_when: false
+  when:
+    - wazuh_storage_root | length > 0
+    - selinux_mode.stdout | default('Disabled') == 'Enforcing'
+
+- name: Label the storage root container_file_t
+  command: semanage fcontext -a -t container_file_t "{{ wazuh_storage_root }}(/.*)?"
+  when:
+    - wazuh_storage_root | length > 0
+    - selinux_mode.stdout | default('Disabled') == 'Enforcing'
+    - wazuh_storage_root not in fcontext_list.stdout
+
+- name: Relabel the storage root
+  command: restorecon -RF {{ wazuh_storage_root }}
+  when:
+    - wazuh_storage_root | length > 0
+    - selinux_mode.stdout | default('Disabled') == 'Enforcing'
+
+- name: Check firewalld
+  shell: command -v firewall-cmd >/dev/null && firewall-cmd --state 2>/dev/null || true
+  register: firewalld_state
+  changed_when: false
+
+- name: Open the stack ports
+  command: firewall-cmd --permanent --add-port={{ item }}
+  loop:
+    - "{{ wazuh_dashboard_port }}/tcp"
+    - "{{ wazuh_indexer_port }}/tcp"
+    - "{{ wazuh_agent_events_port }}/tcp"
+    - "{{ wazuh_agent_enrollment_port }}/tcp"
+    - "{{ wazuh_api_port }}/tcp"
+    - "{{ wazuh_syslog_port }}/udp"
+    - "{{ wazuh_cluster_port }}/tcp"
+    - "{{ wazuh_cluster_port }}/udp"
+  when: wazuh_enable_firewall and firewalld_state.stdout == 'running'
+  register: firewall_add
+
+- name: Reload firewalld when ports changed
+  command: firewall-cmd --reload
+  when: firewall_add is changed

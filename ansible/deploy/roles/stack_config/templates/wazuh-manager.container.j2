@@ -1,0 +1,47 @@
+[Unit]
+Description=Wazuh manager
+After=network-online.target wazuh-indexer.service
+Wants=network-online.target
+Requires=wazuh-indexer.service
+
+[Container]
+ContainerName=wazuh.manager
+Image={{ wazuh_manager_image }}
+HostName=wazuh.manager
+Network=wazuh.network
+PodmanArgs=--network-alias=wazuh.manager
+PublishPort={{ wazuh_agent_events_port }}:1514
+PublishPort={{ wazuh_agent_enrollment_port }}:1515
+PublishPort={{ wazuh_syslog_port }}:514/udp
+PublishPort={{ wazuh_api_port }}:55000
+Environment=INDEXER_URL=https://wazuh.indexer:9200
+Environment=INDEXER_USERNAME=admin
+Environment=FILEBEAT_SSL_VERIFICATION_MODE=full
+Environment=SSL_CERTIFICATE_AUTHORITIES=/etc/ssl/root-ca.pem
+Environment=SSL_CERTIFICATE=/etc/ssl/filebeat.pem
+Environment=SSL_KEY=/etc/ssl/filebeat.key
+Environment=API_USERNAME=wazuh-wui
+Secret=INDEXER_PASSWORD,type=env
+Secret=API_PASSWORD,type=env
+Volume=wazuh_api_configuration:/var/ossec/api/configuration
+Volume=wazuh_etc:/var/ossec/etc
+Volume=wazuh_logs:/var/ossec/logs
+Volume=wazuh_queue:/var/ossec/queue
+Volume=wazuh_var_multigroups:/var/ossec/var/multigroups
+Volume=wazuh_integrations:/var/ossec/integrations
+Volume=wazuh_active_response:/var/ossec/active-response/bin
+Volume=wazuh_agentless:/var/ossec/agentless
+Volume=wazuh_wodles:/var/ossec/wodles
+Volume=filebeat_etc:/etc/filebeat
+Volume=filebeat_var:/var/lib/filebeat
+Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/root-ca-manager.pem:/etc/ssl/root-ca.pem:ro
+Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/wazuh.manager.pem:/etc/ssl/filebeat.pem:ro
+Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/wazuh.manager-key.pem:/etc/ssl/filebeat.key:ro
+Volume={{ wazuh_config_dir }}/wazuh_cluster/wazuh_manager.conf:/wazuh-config-mount/etc/ossec.conf:ro
+
+[Service]
+Restart=always
+TimeoutStartSec=900
+
+[Install]
+WantedBy=default.target

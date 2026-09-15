@@ -1,0 +1,39 @@
+---
+# End-to-end checks once everything is up. Runs as the wazuh user over the
+# loopback interface, same as any client would reach the published ports.
+
+- name: Check the manager API
+  uri:
+    url: "https://127.0.0.1:{{ wazuh_api_port }}/"
+    user: wazuh-wui
+    password: "{{ wazuh_api_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    status_code: 200
+  register: api_root
+  until: api_root.status == 200
+  retries: 20
+  delay: 15
+  changed_when: false
+
+- name: Check the dashboard is serving
+  uri:
+    url: "https://127.0.0.1:{{ wazuh_dashboard_port }}/"
+    validate_certs: false
+    status_code: [200, 302, 401]
+  register: dash_root
+  until: dash_root.status in [200, 302, 401]
+  retries: 20
+  delay: 15
+  changed_when: false
+
+- name: Summary
+  debug:
+    msg:
+      - "Wazuh is up on {{ ansible_host | default(inventory_hostname) }}:"
+      - "  dashboard  https://{{ ansible_host | default(inventory_hostname) }}:{{ wazuh_dashboard_port }}"
+      - "  indexer    https://{{ ansible_host | default(inventory_hostname) }}:{{ wazuh_indexer_port }}"
+      - "  API        https://{{ ansible_host | default(inventory_hostname) }}:{{ wazuh_api_port }}"
+      - "  agents     {{ ansible_host | default(inventory_hostname) }}:{{ wazuh_agent_events_port }} / enrollment {{ wazuh_agent_enrollment_port }}"
+      - "  login      admin / {{ wazuh_indexer_password }}"
+      - "  credentials are stored in {{ wazuh_secrets_file }}"

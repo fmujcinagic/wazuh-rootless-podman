@@ -1,0 +1,37 @@
+---
+# Generate the internal PKI with the bundled certificates-generator image.
+# The demo CA in the repository is never used, the bundle ships the config
+# directory without any key material.
+
+- name: Set the certificate directory
+  set_fact:
+    wazuh_cert_dir: "{{ wazuh_install_root }}/config/wazuh_indexer_ssl_certs"
+
+- name: Check for an existing root CA
+  stat:
+    path: "{{ wazuh_cert_dir }}/root-ca.pem"
+  register: root_ca
+
+- name: Wipe the certificate directory for regeneration
+  file:
+    path: "{{ wazuh_cert_dir }}"
+    state: absent
+  when: wazuh_regen_certs or not root_ca.stat.exists
+
+- name: Create the certificate directory
+  file:
+    path: "{{ wazuh_cert_dir }}"
+    state: directory
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0755"
+
+- name: Generate certificates
+  command: >-
+    podman run --rm
+    -v {{ wazuh_cert_dir }}:/certificates
+    -v {{ wazuh_install_root }}/config/certs.yml:/config/certs.yml:ro
+    {{ certs_generator_image }}
+  register: cert_gen
+  changed_when: true
+  when: wazuh_regen_certs or not root_ca.stat.exists

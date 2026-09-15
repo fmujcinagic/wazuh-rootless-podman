@@ -1,0 +1,7 @@
+# Copy to inventory/hosts.yml and adjust. The ansible_user needs sudo on the
+# target; everything below that runs as the dedicated rootless wazuh user.
+wazuh_server:
+  hosts:
+    wazuh-01:
+      ansible_host: 192.168.122.74
+      ansible_user: rocky-user

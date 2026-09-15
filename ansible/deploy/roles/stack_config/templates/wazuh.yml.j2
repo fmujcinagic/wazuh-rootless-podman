@@ -1,0 +1,8 @@
+hosts:
+  # The dashboard's Wazuh app talks to the manager API with these creds.
+  - {{ wazuh_dashboard_tenant_id | default(1513629884013) }}:
+      url: "https://wazuh.manager"
+      port: {{ wazuh_api_port }}
+      username: wazuh-wui
+      password: "{{ wazuh_api_password }}"
+      run_as: true

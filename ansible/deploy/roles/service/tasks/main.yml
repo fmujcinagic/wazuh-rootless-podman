@@ -1,0 +1,38 @@
+---
+# Start the stack via systemd user units. Linger is enabled so the user
+# manager and the containers survive reboots and disconnects.
+
+- name: Pick up the new Quadlet units
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+    scope: user
+
+- name: Start the indexer first
+  ansible.builtin.systemd_service:
+    name: wazuh-indexer.service
+    state: started
+    enabled: true
+    scope: user
+
+- name: Wait for the indexer to answer on its API
+  uri:
+    url: "https://127.0.0.1:{{ wazuh_indexer_port }}/"
+    validate_certs: false
+    status_code: [200, 401]
+    client_cert: "{{ wazuh_install_root }}/config/wazuh_indexer_ssl_certs/admin.pem"
+    client_key: "{{ wazuh_install_root }}/config/wazuh_indexer_ssl_certs/admin-key.pem"
+  register: indexer_ready
+  until: indexer_ready.status in [200, 401]
+  retries: 30
+  delay: 20
+  changed_when: false
+
+- name: Start the manager and the dashboard
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+    scope: user
+  loop:
+    - wazuh-manager.service
+    - wazuh-dashboard.service

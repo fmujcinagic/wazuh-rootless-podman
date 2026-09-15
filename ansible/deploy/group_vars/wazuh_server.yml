@@ -1,0 +1,52 @@
+# Version pins. The bundle is built against these, keep both in sync.
+wazuh_version: "4.14.7"
+certs_generator_image: "docker.io/wazuh/wazuh-certs-generator:0.0.4"
+
+# Rootless user that owns the whole stack.
+wazuh_user: wazuh
+wazuh_group: wazuh
+wazuh_create_user: true
+# Where the project tree is installed. Quadlet units reference it, so the
+# stack survives a repo move only after a re-run of this playbook.
+wazuh_install_root: "/home/{{ wazuh_user }}/wazuh-rootless-podman"
+# Podman storage. Empty means the default $HOME/.local/share/containers.
+# Point it at a large filesystem if /home is small or missing.
+wazuh_storage_root: ""
+
+# Where the admin dropped wazuh-bundle.tar.gz on the target.
+wazuh_bundle_path: /var/tmp/wazuh-bundle.tar.gz
+# Staging area for image archives during the run (root-owned, world-readable).
+wazuh_stage_dir: /var/tmp/wazuh-deploy-stage
+
+# Published ports. Rootless cannot bind below 1024, keep the defaults.
+wazuh_dashboard_port: 8443
+wazuh_indexer_port: 9200
+wazuh_api_port: 55000
+wazuh_agent_events_port: 1514
+wazuh_agent_enrollment_port: 1515
+wazuh_syslog_port: 5514
+wazuh_cluster_port: 1516
+
+wazuh_indexer_heap: "1g"
+
+# Image references. These must match what build-bundle.yml exported.
+wazuh_indexer_image: "docker.io/wazuh/wazuh-indexer:{{ wazuh_version }}"
+wazuh_manager_image: "docker.io/wazuh/wazuh-manager:{{ wazuh_version }}"
+wazuh_dashboard_image: "docker.io/wazuh/wazuh-dashboard:{{ wazuh_version }}"
+wazuh_server_images:
+  - "{{ wazuh_indexer_image }}"
+  - "{{ wazuh_manager_image }}"
+  - "{{ wazuh_dashboard_image }}"
+  - "{{ certs_generator_image }}"
+wazuh_config_dir: "{{ wazuh_install_root }}/config"
+
+# Passwords. Leave unset to have them generated on the first run and stored
+# in vault/<host>.yml (chmod 600). Encrypt that file with ansible-vault.
+wazuh_indexer_password: ""
+wazuh_dashboard_password: ""
+wazuh_api_password: ""
+wazuh_secrets_file: "{{ playbook_dir }}/vault/{{ inventory_hostname }}.yml"
+
+wazuh_enable_firewall: true
+# Regenerate certificates even if they already exist (wipes the CA).
+wazuh_regen_certs: false

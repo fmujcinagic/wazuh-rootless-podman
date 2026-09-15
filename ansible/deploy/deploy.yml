@@ -1,0 +1,33 @@
+#!/usr/bin/env ansible-playbook
+# Deploy the single-node rootless Wazuh stack on air-gapped targets.
+#
+#   ansible-playbook deploy.yml
+#
+# Requires the offline bundle at wazuh_bundle_path on each target (see
+# ../bundle/build-bundle.yml on an internet-connected host).
+- name: Prepare the host and stage the bundle
+  hosts: wazuh_server
+  gather_facts: true
+  become: true
+  roles:
+    - secrets
+    - preflight
+    - stage
+
+- name: Load images and bring up the stack as {{ wazuh_user | default('wazuh') }}
+  hosts: wazuh_server
+  gather_facts: false
+  become: true
+  become_user: "{{ wazuh_user }}"
+  environment:
+    HOME: "{{ wazuh_home }}"
+    XDG_RUNTIME_DIR: "{{ wazuh_run_dir }}"
+    DBUS_SESSION_BUS_ADDRESS: "unix:path={{ wazuh_run_dir }}/bus"
+  roles:
+    - podman_store
+    - images
+    - certs
+    - stack_config
+    - secrets_podman
+    - service
+    - verify

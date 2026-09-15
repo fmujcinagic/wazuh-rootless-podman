@@ -1,3 +1,7 @@
 config/wazuh_indexer_ssl_certs/
 .secrets/
 *.log
+ansible/deploy/inventory/hosts.yml
+ansible/deploy/vault/
+ansible/deploy/vendor/
+ansible/bundle/dist/

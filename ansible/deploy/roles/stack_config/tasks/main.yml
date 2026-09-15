@@ -1,0 +1,63 @@
+---
+# Render everything that the Quadlet units reference: the units themselves,
+# the indexer user database and the dashboard API config. Paths in the units
+# are absolute so the stack does not depend on the old ./config symlink.
+
+- name: Create the Quadlet directory
+  file:
+    path: "{{ wazuh_home }}/.config/containers/systemd"
+    state: directory
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0755"
+
+- name: Hash the indexer admin password
+  command: podman run --rm {{ wazuh_indexer_image }} /usr/share/wazuh-indexer/opensearch-security/tools/hash.sh -p {{ wazuh_indexer_password | quote }}
+  register: indexer_hash_raw
+  changed_when: false
+  no_log: true
+
+- name: Hash the dashboard service password
+  command: podman run --rm {{ wazuh_indexer_image }} /usr/share/wazuh-indexer/opensearch-security/tools/hash.sh -p {{ wazuh_dashboard_password | quote }}
+  register: dashboard_hash_raw
+  changed_when: false
+  no_log: true
+
+- name: Extract the bcrypt hashes
+  set_fact:
+    wazuh_indexer_hash: "{{ indexer_hash_raw.stdout | regex_findall('\\$2[aby]\\$[0-9]{2}\\$[./A-Za-z0-9]{53}') | last }}"
+    wazuh_dashboard_hash: "{{ dashboard_hash_raw.stdout | regex_findall('\\$2[aby]\\$[0-9]{2}\\$[./A-Za-z0-9]{53}') | last }}"
+
+- name: Fail when the hashes did not come out of the tool
+  assert:
+    that: wazuh_indexer_hash and wazuh_dashboard_hash
+    fail_msg: "hash.sh output could not be parsed from the indexer image"
+
+- name: Render the indexer users
+  template:
+    src: internal_users.yml.j2
+    dest: "{{ wazuh_install_root }}/config/wazuh_indexer/internal_users.yml"
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0644"
+
+- name: Render the dashboard API config
+  template:
+    src: wazuh.yml.j2
+    dest: "{{ wazuh_install_root }}/config/wazuh_dashboard/wazuh.yml"
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0644"
+
+- name: Render the Quadlet units
+  template:
+    src: "{{ item }}"
+    dest: "{{ wazuh_home }}/.config/containers/systemd/{{ item | regex_replace('\\.j2$', '') }}"
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0644"
+  loop:
+    - wazuh.network.j2
+    - wazuh-indexer.container.j2
+    - wazuh-manager.container.j2
+    - wazuh-dashboard.container.j2

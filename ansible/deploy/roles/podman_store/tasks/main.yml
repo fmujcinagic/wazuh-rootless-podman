@@ -1,0 +1,35 @@
+---
+# Redirect rootless podman storage off of $HOME when a separate large
+# filesystem is the better home for images and volumes.
+
+- name: Create the config directory
+  file:
+    path: "{{ wazuh_home }}/.config/containers"
+    state: directory
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0755"
+
+- name: Ensure the graphroot exists
+  file:
+    path: "{{ wazuh_storage_root }}/storage"
+    state: directory
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0710"
+  when: wazuh_storage_root | length > 0
+
+- name: Render storage.conf
+  template:
+    src: storage.conf.j2
+    dest: "{{ wazuh_home }}/.config/containers/storage.conf"
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0644"
+  when: wazuh_storage_root | length > 0
+
+- name: Remove a stale storage.conf from an earlier run
+  file:
+    path: "{{ wazuh_home }}/.config/containers/storage.conf"
+    state: absent
+  when: wazuh_storage_root | length == 0

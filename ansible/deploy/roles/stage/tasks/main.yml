@@ -1,0 +1,70 @@
+---
+# Unpack the bundle, verify it against its manifest and lay down the project
+# tree. Runs as root; the staging area stays readable for the wazuh user.
+
+- name: Check that the bundle is present on the target
+  stat:
+    path: "{{ wazuh_bundle_path }}"
+  register: bundle_file
+
+- name: Fail with a helpful message when the bundle is missing
+  fail:
+    msg: >-
+      {{ wazuh_bundle_path }} not found on {{ inventory_hostname }}.
+      Build it with ../bundle/build-bundle.yml and copy it to the target
+      (wazuh_bundle_path).
+  when: not bundle_file.stat.exists
+
+- name: Create the staging area
+  file:
+    path: "{{ wazuh_stage_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Unpack the bundle
+  unarchive:
+    src: "{{ wazuh_bundle_path }}"
+    dest: "{{ wazuh_stage_dir }}"
+    remote_src: true
+    extra_opts: [--strip-components=0]
+  register: bundle_unpack
+
+- name: Read the bundle manifest
+  slurp:
+    src: "{{ wazuh_stage_dir }}/manifest.yml"
+  register: manifest_raw
+
+- name: Parse the manifest
+  set_fact:
+    wazuh_bundle_manifest: "{{ manifest_raw.content | b64decode | from_yaml }}"
+
+- name: Collect checksums of the staged files
+  stat:
+    path: "{{ wazuh_stage_dir }}/{{ item.path }}"
+    checksum_algorithm: sha256
+  loop: "{{ wazuh_bundle_manifest.images + wazuh_bundle_manifest.files }}"
+  register: staged_files
+
+- name: Verify every staged file against the manifest
+  assert:
+    that: item.stat.checksum == wanted
+    fail_msg: "checksum mismatch for {{ item.item.path }}"
+  vars:
+    wanted: "{{ (wazuh_bundle_manifest.images + wazuh_bundle_manifest.files)
+                | selectattr('path', 'equalto', item.item.path)
+                | map(attribute='sha256') | first }}"
+  loop: "{{ staged_files.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Install the project tree
+  shell: mkdir -p {{ wazuh_install_root }} && tar -cf - -C {{ wazuh_stage_dir }}/project . | tar -xf - -C {{ wazuh_install_root }}
+
+- name: Hand the tree to the wazuh user
+  file:
+    path: "{{ wazuh_install_root }}"
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    recurse: true

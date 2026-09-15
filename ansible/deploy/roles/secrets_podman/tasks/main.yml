@@ -1,0 +1,20 @@
+---
+# Create/refresh the podman secrets the Quadlet units reference.
+
+- name: Set the indexer password secret
+  containers.podman.podman_secret:
+    name: INDEXER_PASSWORD
+    data: "{{ wazuh_indexer_password }}"
+    state: present
+
+- name: Set the dashboard password secret
+  containers.podman.podman_secret:
+    name: DASHBOARD_PASSWORD
+    data: "{{ wazuh_dashboard_password }}"
+    state: present
+
+- name: Set the API password secret
+  containers.podman.podman_secret:
+    name: API_PASSWORD
+    data: "{{ wazuh_api_password }}"
+    state: present
