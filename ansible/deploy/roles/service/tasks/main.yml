@@ -7,12 +7,34 @@
     daemon_reload: true
     scope: user
 
+- name: Check that the wazuh network exists
+  command: podman network inspect wazuh
+  register: network_check
+  failed_when: false
+  changed_when: false
+
+# The quadlet network unit runs create --ignore, which also swallows real
+# errors, then it can start with no network in place.
+- name: Create the wazuh network when it is missing
+  command: podman network create wazuh
+  when: network_check.rc != 0
+
 - name: Start the indexer first
   ansible.builtin.systemd_service:
     name: wazuh-indexer.service
     state: started
     enabled: true
     scope: user
+  register: indexer_start
+  retries: 2
+  delay: 5
+
+- name: Reboot the indexer when the user database was rebuilt
+  ansible.builtin.systemd_service:
+    name: wazuh-indexer.service
+    state: restarted
+    scope: user
+  when: users_rendered is changed
 
 - name: Wait for the indexer to answer on its API
   uri:
@@ -27,12 +49,25 @@
   delay: 20
   changed_when: false
 
+- name: Restart the manager and dashboard for the rebuilt credentials
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: restarted
+    scope: user
+  loop:
+    - wazuh-manager.service
+    - wazuh-dashboard.service
+  when: users_rendered is changed
+
 - name: Start the manager and the dashboard
   ansible.builtin.systemd_service:
     name: "{{ item }}"
     state: started
     enabled: true
     scope: user
+  register: stack_start
+  retries: 2
+  delay: 5
   loop:
     - wazuh-manager.service
     - wazuh-dashboard.service
