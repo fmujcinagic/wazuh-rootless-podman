@@ -54,8 +54,9 @@ To change the default passwords, export them before running the script:
 INDEXER_PASSWORD=... API_PASSWORD=... DASHBOARD_PASSWORD=... ./scripts/install.sh
 ```
 
-Changing `INDEXER_PASSWORD` or `DASHBOARD_PASSWORD` also requires updating the
-bcrypt hashes in `config/wazuh_indexer/internal_users.yml`.
+The generated passwords also need a matching internal users database; for the
+Ansible deployment this is handled by regenerating the user database
+(`wazuh_regen_users`).
 
 ## Manage
 

@@ -59,9 +59,14 @@
   loop_control:
     label: "{{ item.item.path }}"
 
+- name: Check for an existing install root
+  stat:
+    path: "{{ wazuh_install_root }}"
+  register: install_root
+
 - name: Install the project tree
   shell: mkdir -p {{ wazuh_install_root }} && tar -cf - -C {{ wazuh_stage_dir }}/project . | tar -xf - -C {{ wazuh_install_root }}
-  when: bundle_unpack is changed
+  when: bundle_unpack is changed or not install_root.stat.exists
 
 - name: Hand the tree to the wazuh user
   file:
@@ -69,4 +74,4 @@
     owner: "{{ wazuh_user }}"
     group: "{{ wazuh_group }}"
     recurse: true
-  when: bundle_unpack is changed
+  when: bundle_unpack is changed or not install_root.stat.exists
