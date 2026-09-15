@@ -1,0 +1,27 @@
+[Unit]
+Description=Wazuh agent
+{% if wazuh_node_role != 'agent' %}
+After=wazuh-manager.service
+Wants=wazuh-manager.service
+{% endif %}
+
+[Container]
+ContainerName=wazuh.agent
+Image={{ wazuh_agent_image }}
+HostName={{ wazuh_agent_name }}
+Network=host
+PodmanArgs=--security-opt label=disable
+Environment=WAZUH_MANAGER_SERVER={{ wazuh_agent_manager_host | default('wazuh.manager', true) }}
+Environment=WAZUH_REGISTRATION_SERVER={{ wazuh_agent_manager_host | default('wazuh.manager', true) }}
+Environment=WAZUH_AGENT_NAME={{ wazuh_agent_name }}
+Environment=WAZUH_AGENT_GROUP={{ wazuh_agent_group }}
+Volume=wazuh-agent-etc:/var/ossec/etc
+Volume=wazuh-agent-queue:/var/ossec/queue
+Volume={{ wazuh_install_root }}/agent/ossec.conf:/wazuh-config-mount/etc/ossec.conf:z
+
+[Service]
+Restart=always
+TimeoutStartSec=600
+
+[Install]
+WantedBy=default.target

@@ -27,17 +27,36 @@ wazuh_agent_enrollment_port: 1515
 wazuh_syslog_port: 5514
 wazuh_cluster_port: 1516
 
+# Node role. master deploys the whole stack, worker only runs the manager
+# clustered against the master (plus a local agent), agent only runs the
+# agent. The worker talks to the master's indexer, so its password values
+# must be the master's ones.
+wazuh_node_role: master
+wazuh_cluster_name: "wazuh"
+wazuh_cluster_key: ""
+wazuh_cluster_master_host: ""
+wazuh_cluster_master_node_name: wazuh.manager
+wazuh_worker_node_name: wazuh-worker
+# Where the worker's filebeat ships events to.
+wazuh_manager_indexer_url: https://wazuh.indexer:9200
+
 wazuh_indexer_heap: "1g"
 
 # Image references. These must match what build-bundle.yml exported.
 wazuh_indexer_image: "docker.io/wazuh/wazuh-indexer:{{ wazuh_version }}"
 wazuh_manager_image: "docker.io/wazuh/wazuh-manager:{{ wazuh_version }}"
 wazuh_dashboard_image: "docker.io/wazuh/wazuh-dashboard:{{ wazuh_version }}"
-wazuh_server_images:
-  - "{{ wazuh_indexer_image }}"
-  - "{{ wazuh_manager_image }}"
-  - "{{ wazuh_dashboard_image }}"
-  - "{{ certs_generator_image }}"
+wazuh_agent_image: "docker.io/wazuh/wazuh-agent:{{ wazuh_version }}"
+wazuh_server_images_by_role:
+  master:
+    - "{{ wazuh_indexer_image }}"
+    - "{{ wazuh_manager_image }}"
+    - "{{ wazuh_dashboard_image }}"
+    - "{{ certs_generator_image }}"
+  worker:
+    - "{{ wazuh_manager_image }}"
+  agent:
+    - "{{ wazuh_agent_image }}"
 wazuh_config_dir: "{{ wazuh_install_root }}/config"
 
 # Passwords. Leave unset to have them generated on the first run and stored
@@ -46,6 +65,13 @@ wazuh_indexer_password: ""
 wazuh_dashboard_password: ""
 wazuh_api_password: ""
 wazuh_secrets_file: "{{ playbook_dir }}/vault/{{ inventory_hostname }}.yml"
+
+# Agent mode (and the local agent on a worker). Empty manager host defaults
+# to the podman network alias wazuh.manager, which is right for the agent
+# deployed next to its manager; network-less agents use the host IP.
+wazuh_agent_manager_host: ""
+wazuh_agent_name: "{{ inventory_hostname }}"
+wazuh_agent_group: default
 
 wazuh_enable_firewall: true
 # Regenerate certificates even if they already exist (wipes the CA).

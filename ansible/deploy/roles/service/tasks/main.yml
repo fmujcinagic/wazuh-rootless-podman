@@ -1,6 +1,8 @@
 ---
 # Start the stack via systemd user units. Linger is enabled so the user
-# manager and the containers survive reboots and disconnects.
+# manager and the containers survive reboots and disconnects. The node role
+# decides which units make sense: master = indexer/manager/dashboard,
+# worker = manager plus its own agent, agent = the agent only.
 
 - name: Pick up the new Quadlet units
   ansible.builtin.systemd_service:
@@ -12,29 +14,30 @@
   register: network_check
   failed_when: false
   changed_when: false
+  when: wazuh_node_role != 'agent'
 
 # The quadlet network unit runs create --ignore, which also swallows real
 # errors, then it can start with no network in place.
 - name: Create the wazuh network when it is missing
   command: podman network create wazuh
-  when: network_check.rc != 0
+  when:
+    - wazuh_node_role != 'agent'
+    - network_check.rc | default(1) != 0
 
-- name: Start the indexer first
+- name: Start the units of this node
   ansible.builtin.systemd_service:
-    name: wazuh-indexer.service
+    name: "{{ item }}"
     state: started
     enabled: true
     scope: user
-  register: indexer_start
+  register: unit_start
   retries: 2
   delay: 5
-
-- name: Reboot the indexer when the user database was rebuilt
-  ansible.builtin.systemd_service:
-    name: wazuh-indexer.service
-    state: restarted
-    scope: user
-  when: users_rendered is changed
+  loop: "{{ ({'master': ['wazuh-indexer.service', 'wazuh-manager.service', 'wazuh-dashboard.service'],
+              'worker': ['wazuh-manager.service', 'wazuh-agent.service'],
+              'agent': ['wazuh-agent.service']})[wazuh_node_role] }}"
+  loop_control:
+    label: "{{ item }}"
 
 - name: Wait for the indexer to answer on its API
   uri:
@@ -48,26 +51,20 @@
   retries: 30
   delay: 20
   changed_when: false
+  when: wazuh_node_role == 'master'
 
-- name: Restart the manager and dashboard for the rebuilt credentials
+# A rebuilt user database has to reach the manager and dashboard too; they
+# pick the passwords up as environment at container start.
+- name: Restart the stack for the rebuilt credentials
   ansible.builtin.systemd_service:
     name: "{{ item }}"
     state: restarted
     scope: user
   loop:
+    - wazuh-indexer.service
     - wazuh-manager.service
     - wazuh-dashboard.service
-  when: users_rendered is changed
-
-- name: Start the manager and the dashboard
-  ansible.builtin.systemd_service:
-    name: "{{ item }}"
-    state: started
-    enabled: true
-    scope: user
-  register: stack_start
-  retries: 2
-  delay: 5
-  loop:
-    - wazuh-manager.service
-    - wazuh-dashboard.service
+  when:
+    - wazuh_node_role == 'master'
+    - users_rendered is defined
+    - users_rendered is changed

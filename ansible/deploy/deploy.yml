@@ -10,7 +10,8 @@
   gather_facts: true
   become: true
   roles:
-    - secrets
+    - role: secrets
+      when: wazuh_node_role != 'agent'
     - preflight
     - stage
 
@@ -26,8 +27,10 @@
   roles:
     - podman_store
     - images
-    - certs
+    - role: certs
+      when: wazuh_node_role != 'agent'
     - stack_config
-    - secrets_podman
+    - role: secrets_podman
+      when: wazuh_node_role != 'agent'
     - service
     - verify

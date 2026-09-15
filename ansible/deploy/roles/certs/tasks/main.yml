@@ -1,7 +1,10 @@
 ---
-# Generate the internal PKI with the bundled certificates-generator image.
-# The demo CA in the repository is never used, the bundle ships the config
-# directory without any key material.
+# Certificate handling per node role.
+#   master : generate the internal PKI with the bundled generator image.
+#   worker : needs the master-issued manager key pair and CA; the operator
+#            (or wazuh.cfg) drops them into /var/tmp/wazuh-worker-certs and
+#            they get moved into place here.
+#   agent  : nothing, the agent has no key material.
 
 - name: Set the certificate directory
   set_fact:
@@ -11,17 +14,52 @@
   stat:
     path: "{{ wazuh_cert_dir }}/root-ca.pem"
   register: root_ca
+  when: wazuh_node_role != 'agent'
 
 - name: Decide whether certificates have to be generated
   set_fact:
-    wazuh_generate_certs: "{{ wazuh_regen_certs | bool or not root_ca.stat.exists }}"
+    wazuh_generate_certs: "{{ wazuh_node_role == 'master' and (wazuh_regen_certs | bool or not root_ca.stat.exists) }}"
+  when: wazuh_node_role != 'agent'
+
+- name: Worker certificate drop directory
+  stat:
+    path: /var/tmp/wazuh-worker-certs/root-ca-manager.pem
+  register: worker_cert_drop
+  when: wazuh_node_role == 'worker'
+
+- name: Move the master issued certificates into the config tree
+  command: >-
+    mv
+    /var/tmp/wazuh-worker-certs/root-ca-manager.pem
+    /var/tmp/wazuh-worker-certs/wazuh.manager.pem
+    /var/tmp/wazuh-worker-certs/wazuh.manager-key.pem
+    {{ wazuh_cert_dir }}/
+  when:
+    - wazuh_node_role == 'worker'
+    - worker_cert_drop.stat.exists | default(false)
+
+- name: Worker needs the manager certificate and the CA
+  stat:
+    path: "{{ wazuh_cert_dir }}/wazuh.manager-key.pem"
+  register: worker_manager_cert
+  when: wazuh_node_role == 'worker'
+
+- name: Fail when the manager certificates never arrived
+  fail:
+    msg: >-
+      The worker needs root-ca-manager.pem, wazuh.manager.pem and
+      wazuh.manager-key.pem in {{ wazuh_cert_dir }} or in
+      /var/tmp/wazuh-worker-certs. Pull them from the master (they live in
+      config/wazuh_indexer_ssl_certs there) and re-run the deployment.
+  when:
+    - wazuh_node_role == 'worker'
+    - not (worker_manager_cert.stat.exists | default(false))
 
 - name: Wipe the certificate directory for regeneration
   file:
     path: "{{ wazuh_cert_dir }}"
     state: absent
-  when: wazuh_generate_certs | bool
-
+  when: wazuh_generate_certs is defined and (wazuh_generate_certs | bool)
 
 - name: Create the certificate directory
   file:
@@ -30,6 +68,7 @@
     owner: "{{ wazuh_user }}"
     group: "{{ wazuh_group }}"
     mode: "0755"
+  when: wazuh_node_role != 'agent'
 
 - name: Copy the offline certificate script
   copy:
@@ -38,21 +77,21 @@
     owner: "{{ wazuh_user }}"
     group: "{{ wazuh_group }}"
     mode: "0755"
-  when: wazuh_generate_certs | bool
+  when: wazuh_generate_certs is defined and (wazuh_generate_certs | bool)
 
 - name: Extract the certificate tool from the indexer image
   command: >-
     podman run --rm --entrypoint cat {{ wazuh_indexer_image }}
     {{ wazuh_cert_tool_path }}
   register: cert_tool
-  when: wazuh_generate_certs | bool
+  when: wazuh_generate_certs is defined and (wazuh_generate_certs | bool)
 
 - name: Drop the extracted tool next to the generate script
   copy:
     dest: "{{ wazuh_config_dir }}/wazuh-certs-tool.sh"
     mode: "0755"
     content: "{{ cert_tool.stdout }}"
-  when: wazuh_generate_certs | bool
+  when: wazuh_generate_certs is defined and (wazuh_generate_certs | bool)
 
 - name: Generate certificates with the generator image
   command: >-
@@ -63,7 +102,7 @@
     {{ certs_generator_image }}
     /work/generate-certs-offline.sh
   register: cert_gen
-  when: wazuh_generate_certs | bool
+  when: wazuh_generate_certs is defined and (wazuh_generate_certs | bool)
 
 - name: Remove the helper scripts
   file:
@@ -72,4 +111,4 @@
   loop:
     - generate-certs-offline.sh
     - wazuh-certs-tool.sh
-  when: wazuh_generate_certs | bool
+  when: wazuh_generate_certs is defined and (wazuh_generate_certs | bool)

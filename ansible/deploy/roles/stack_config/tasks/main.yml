@@ -1,7 +1,7 @@
 ---
-# Render everything that the Quadlet units reference: the units themselves,
-# the indexer user database and the dashboard API config. Paths in the units
-# are absolute so the stack does not depend on the old ./config symlink.
+# Render everything that the Quadlet units reference: the units themselves
+# plus the manager cluster configuration. Indexer files and the dashboard
+# config only render on the master (shared_render.yml).
 
 - name: Create the Quadlet directory
   file:
@@ -11,104 +11,29 @@
     group: "{{ wazuh_group }}"
     mode: "0755"
 
-- name: Check for a rendered indexer user database
-  stat:
-    path: "{{ wazuh_install_root }}/config/wazuh_indexer/internal_users.yml"
-  register: users_file
-
-- name: Fingerprint of the current indexer passwords
+- name: Role facts for the render below
   set_fact:
-    wazuh_users_fingerprint: "{{ (wazuh_indexer_password ~ ':' ~ wazuh_dashboard_password) | hash('sha256') }}"
+    wazuh_cluster_enabled: "{{ wazuh_node_role == 'worker' or (wazuh_node_role == 'master' and wazuh_cluster_key | length > 0) }}"
 
-- name: Read the fingerprint of the database on the host
-  slurp:
-    src: "{{ wazuh_install_root }}/config/wazuh_indexer/.passwords-fingerprint"
-  register: stored_fingerprint
-  failed_when: false
+- name: Render the master specific config
+  include_tasks: shared_render.yml
+  when: wazuh_node_role == 'master'
 
-- name: Does the database have to be rebuilt
-  set_fact:
-    wazuh_rebuild_users: "{{ wazuh_regen_users | bool
-      or not users_file.stat.exists
-      or (stored_fingerprint.content | default('', true) | b64decode != wazuh_users_fingerprint) }}"
-
-# The hash tool salts freshly every run, so a rebuilt database never looks
-# byte identical. Rebuild when the fingerprint does not match the passwords.
-- name: Hash the indexer admin password
-  command: >-
-    podman run --rm
-    --entrypoint {{ wazuh_indexer_hash_tool }}
-    -e OPENSEARCH_JAVA_HOME={{ wazuh_indexer_java_home }}
-    {{ wazuh_indexer_image }} -p {{ wazuh_indexer_password | quote }}
-  register: indexer_hash_raw
-  changed_when: false
-  no_log: true
-  when: wazuh_rebuild_users | bool
-
-- name: Hash the dashboard service password
-  command: >-
-    podman run --rm
-    --entrypoint {{ wazuh_indexer_hash_tool }}
-    -e OPENSEARCH_JAVA_HOME={{ wazuh_indexer_java_home }}
-    {{ wazuh_indexer_image }} -p {{ wazuh_dashboard_password | quote }}
-  register: dashboard_hash_raw
-  changed_when: false
-  no_log: true
-  when: wazuh_rebuild_users | bool
-
-- name: Extract the bcrypt hashes
-  set_fact:
-    wazuh_indexer_hash: "{{ indexer_hash_raw.stdout | regex_findall('\\$2[aby]\\$[0-9]{2}\\$[./A-Za-z0-9]{53}') | last }}"
-    wazuh_dashboard_hash: "{{ dashboard_hash_raw.stdout | regex_findall('\\$2[aby]\\$[0-9]{2}\\$[./A-Za-z0-9]{53}') | last }}"
-  when: wazuh_rebuild_users | bool
-
-- name: Fail when the hashes did not come out of the tool
-  assert:
-    that:
-      - wazuh_indexer_hash | length > 0
-      - wazuh_dashboard_hash | length > 0
-    fail_msg: "hash.sh output could not be parsed from the indexer image"
-  when: wazuh_rebuild_users | bool
-
-- name: Render the indexer users
+- name: Render the manager cluster configuration
   template:
-    src: internal_users.yml.j2
-    dest: "{{ wazuh_install_root }}/config/wazuh_indexer/internal_users.yml"
+    src: wazuh_manager.conf.j2
+    dest: "{{ wazuh_config_dir }}/wazuh_cluster/wazuh_manager.conf"
     owner: "{{ wazuh_user }}"
     group: "{{ wazuh_group }}"
     mode: "0644"
-  register: users_rendered
-  when: wazuh_rebuild_users | bool
+  register: manager_conf_rendered
+  when: wazuh_node_role != 'agent'
 
-- name: Store the password fingerprint next to the database
-  copy:
-    dest: "{{ wazuh_install_root }}/config/wazuh_indexer/.passwords-fingerprint"
-    content: "{{ wazuh_users_fingerprint }}"
-    owner: "{{ wazuh_user }}"
-    group: "{{ wazuh_group }}"
-    mode: "0600"
-  when: wazuh_rebuild_users | bool
-
-# The restarts for a rebuilt user database happen in the service role, after
-# the Quadlet units from the render below are known to systemd.
-
-- name: Render the dashboard API config
+- name: Render the agent Quadlet unit
   template:
-    src: wazuh.yml.j2
-    dest: "{{ wazuh_install_root }}/config/wazuh_dashboard/wazuh.yml"
+    src: wazuh-agent.container.j2
+    dest: "{{ wazuh_home }}/.config/containers/systemd/wazuh-agent.container"
     owner: "{{ wazuh_user }}"
     group: "{{ wazuh_group }}"
     mode: "0644"
-
-- name: Render the Quadlet units
-  template:
-    src: "{{ item }}"
-    dest: "{{ wazuh_home }}/.config/containers/systemd/{{ item | regex_replace('\\.j2$', '') }}"
-    owner: "{{ wazuh_user }}"
-    group: "{{ wazuh_group }}"
-    mode: "0644"
-  loop:
-    - wazuh.network.j2
-    - wazuh-indexer.container.j2
-    - wazuh-manager.container.j2
-    - wazuh-dashboard.container.j2
+  when: wazuh_node_role != 'master'

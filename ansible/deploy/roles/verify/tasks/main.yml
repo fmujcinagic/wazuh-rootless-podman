@@ -1,6 +1,6 @@
 ---
-# End-to-end checks once everything is up. Runs as the wazuh user over the
-# loopback interface, same as any client would reach the published ports.
+# End-to-end checks once everything is up. Run over the loopback interface,
+# the same as any local client would reach the published ports.
 
 - name: Check the manager API
   uri:
@@ -15,6 +15,7 @@
   retries: 20
   delay: 15
   changed_when: false
+  when: wazuh_node_role != 'agent'
 
 - name: Check the dashboard is serving
   uri:
@@ -26,14 +27,32 @@
   retries: 20
   delay: 15
   changed_when: false
+  when: wazuh_node_role == 'master'
+
+- name: Check the agent service is up
+  command: systemctl --user is-active wazuh-agent.service
+  register: agent_active
+  until: agent_active.stdout == 'active'
+  retries: 20
+  delay: 15
+  changed_when: false
+  when: wazuh_node_role != 'master'
 
 - name: Summary
+  vars:
+    node_title: "{{ 'Wazuh master' if wazuh_node_role == 'master' else ('Wazuh worker' if wazuh_node_role == 'worker' else 'Wazuh agent') }}"
+    node_addr: "{{ ansible_host | default(inventory_hostname) }}"
   debug:
-    msg:
-      - "Wazuh is up on {{ ansible_host | default(inventory_hostname) }}:"
-      - "  dashboard  https://{{ ansible_host | default(inventory_hostname) }}:{{ wazuh_dashboard_port }}"
-      - "  indexer    https://{{ ansible_host | default(inventory_hostname) }}:{{ wazuh_indexer_port }}"
-      - "  API        https://{{ ansible_host | default(inventory_hostname) }}:{{ wazuh_api_port }}"
-      - "  agents     {{ ansible_host | default(inventory_hostname) }}:{{ wazuh_agent_events_port }} / enrollment {{ wazuh_agent_enrollment_port }}"
-      - "  login      admin / {{ wazuh_indexer_password }}"
-      - "  credentials are stored in {{ wazuh_secrets_file }}"
+    msg: >-
+      {{
+        [
+          node_title ~ ' is up on ' ~ node_addr ~ ':',
+          'credentials are stored in ' ~ wazuh_secrets_file
+        ]
+        + (['  dashboard  https://' ~ node_addr ~ ':' ~ wazuh_dashboard_port] if wazuh_node_role == 'master' else [])
+        + (['  indexer    https://' ~ node_addr ~ ':' ~ wazuh_indexer_port] if wazuh_node_role == 'master' else [])
+        + (['  API        https://' ~ node_addr ~ ':' ~ wazuh_api_port] if wazuh_node_role != 'agent' else [])
+        + (['  agent      ' ~ wazuh_agent_name ~ ' enrolled against ' ~ wazuh_agent_manager_host] if wazuh_node_role != 'master' else [])
+        + (['  cluster    ' ~ wazuh_cluster_name ~ ' (master ' ~ wazuh_cluster_master_host ~ ')'] if wazuh_node_role == 'worker' else [])
+        + (['  login      admin / ' ~ wazuh_indexer_password] if wazuh_node_role == 'master' else [])
+      }}

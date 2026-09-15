@@ -165,6 +165,7 @@
     - "{{ wazuh_cluster_port }}/tcp"
     - "{{ wazuh_cluster_port }}/udp"
   when:
+    - wazuh_node_role != 'agent'
     - wazuh_enable_firewall and firewalld_state.stdout == 'running'
     - item not in firewall_ports.stdout | default('')
   register: firewall_add

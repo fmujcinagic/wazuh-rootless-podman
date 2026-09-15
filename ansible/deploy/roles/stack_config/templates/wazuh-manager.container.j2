@@ -1,8 +1,10 @@
 [Unit]
 Description=Wazuh manager
-After=network-online.target wazuh-indexer.service
+After=network-online.target{% if wazuh_node_role == 'master' %} wazuh-indexer.service{% endif %}
 Wants=network-online.target
+{% if wazuh_node_role == 'master' %}
 Requires=wazuh-indexer.service
+{% endif %}
 
 [Container]
 ContainerName=wazuh.manager
@@ -12,9 +14,12 @@ Network=wazuh.network
 PodmanArgs=--network-alias=wazuh.manager
 PublishPort={{ wazuh_agent_events_port }}:1514
 PublishPort={{ wazuh_agent_enrollment_port }}:1515
-PublishPort={{ wazuh_syslog_port }}:514/udp
 PublishPort={{ wazuh_api_port }}:55000
-Environment=INDEXER_URL=https://wazuh.indexer:9200
+{% if wazuh_cluster_enabled %}
+PublishPort={{ wazuh_cluster_port }}:1516
+{% endif %}
+PublishPort={{ wazuh_syslog_port }}:514/udp
+Environment=INDEXER_URL={{ wazuh_manager_indexer_url }}
 Environment=INDEXER_USERNAME=admin
 Environment=FILEBEAT_SSL_VERIFICATION_MODE=full
 Environment=SSL_CERTIFICATE_AUTHORITIES=/etc/ssl/root-ca.pem

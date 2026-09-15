@@ -134,6 +134,45 @@ are not available, add the `Volume=` lines to
 The Quadlet units were generated from the original compose file with
 `podlet compose` and then adapted for rootless use.
 
+## Node modes and the CLI
+
+The Ansible playbook in `ansible/deploy` knows three node modes, picked by
+the `wazuh_node_role` variable or through the interactive helper `wazuh.cfg`
+in the repository root:
+
+```
+./wazuh.cfg
+```
+
+1. **Standalone server** (`wazuh_node_role=master`) - indexer, manager and
+   dashboard on one VM, acting as the cluster master. If a cluster key is
+   given, the manager leaves the cluster port open so workers can join.
+2. **Worker manager + local agent** (`wazuh_node_role=worker`) - joins an
+   existing master. The CLI asks for the master host, the cluster name and
+   the cluster key, plus the master's indexer admin and API passwords (the
+   worker ships its events into the master's indexer). It optionally pulls
+   `root-ca-manager.pem`, `wazuh.manager.pem` and `wazuh.manager-key.pem`
+   from the master into `/var/tmp/wazuh-worker-certs` on the target; the
+   playbook moves them into `config/wazuh_indexer_ssl_certs/` before the
+   manager starts.
+3. **Agent only** (`wazuh_node_role=agent`) - a Wazuh agent enrolled against
+   a remote manager. The CLI asks for the manager host, the events port,
+   the enrollment port, the agent name and the agent group. The agent
+   container runs with the host network, because rootless port publishing
+   does not accept container to host IP connections on every setup.
+
+Common prompts for every mode: the target VM ssh host, the ssh user, the
+sudo password for that user (passed along to ansible-playbook) and an
+optional Podman storage directory override. Nothing is hardcoded; every
+prompt shows a sensible default. The CLI also offers to install podman and
+python3 over ssh for a fresh VM before deploying.
+
+All three modes reuse the same offline bundle and the same
+`ansible/deploy/deploy.yml` playbook; the playbook switches the Quadlet
+layout, the manager cluster block and the verification based on the role.
+Enrollment happens on port 1515 during agent registration, after which
+the agent pushes events to the manager on port 1514.
+
 ## Credits
 
 The configuration files under `config/` are derived from the official Wazuh

@@ -1,6 +1,26 @@
 ---
-# Load the bundled image archives into the rootless store, skipping images
-# that are already present at the pinned tag.
+# Unpack only the parts of the bundle this node needs, verify the manifest
+# hashes and load the images. Runs as the rootless user so extracted files
+# come out with the right ownership without chown churn.
+#
+# The manifest and the missing image archives are extracted individually:
+# on small VMs the whole bundle would not fit next to the container store.
+
+- name: Extract the bundle manifest
+  command: >-
+    tar -zxf {{ wazuh_bundle_path }} -C {{ wazuh_stage_dir }} manifest.yml
+  args:
+    creates: "{{ wazuh_stage_dir }}/manifest.yml"
+  changed_when: false
+
+- name: Read the bundle manifest
+  slurp:
+    src: "{{ wazuh_stage_dir }}/manifest.yml"
+  register: manifest_raw
+
+- name: Parse the manifest
+  set_fact:
+    wazuh_bundle_manifest: "{{ manifest_raw.content | b64decode | from_yaml }}"
 
 - name: List the images already in the store
   command: podman images --format "{{ '{{' }} .Repository {{ '}}' }}:{{ '{{' }} .Tag {{ '}}' }}"
@@ -11,9 +31,38 @@
   set_fact:
     wazuh_image_archives: >-
       {{ wazuh_bundle_manifest.images
-         | selectattr('ref', 'in', wazuh_server_images)
+         | selectattr('ref', 'in', wazuh_server_images_by_role[wazuh_node_role])
          | rejectattr('ref', 'in', loaded_images.stdout_lines)
          | list }}
+
+- name: Extract the remaining parts of the bundle
+  unarchive:
+    src: "{{ wazuh_bundle_path }}"
+    dest: "{{ wazuh_stage_dir }}"
+    remote_src: true
+    extra_opts: "{{ ['project', 'collections']
+                    + (wazuh_image_archives | map(attribute='path') | list) }}"
+  register: bundle_extract
+  changed_when: false
+
+- name: Collect checksums of the staged files
+  stat:
+    path: "{{ wazuh_stage_dir }}/{{ item.path }}"
+    checksum_algorithm: sha256
+  loop: "{{ wazuh_image_archives + (wazuh_bundle_manifest.files | selectattr('path', 'match', '^collections') | list) }}"
+  register: staged_files
+
+- name: Verify every staged file against the manifest
+  vars:
+    wanted: "{{ (wazuh_bundle_manifest.images + wazuh_bundle_manifest.files)
+                | selectattr('path', 'equalto', item.item.path)
+                | map(attribute='sha256') | first }}"
+  assert:
+    that: item.stat.exists | default(false) is false or item.stat.checksum == wanted
+    fail_msg: "checksum mismatch for {{ item.item.path }}"
+  loop: "{{ staged_files.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
 
 - name: Load the image archives
   command: podman load -i {{ wazuh_stage_dir }}/{{ item.path }}
@@ -21,3 +70,32 @@
   loop_control:
     label: "{{ item.ref }}"
   changed_when: true
+
+- name: Loaded archives out of the staging area
+  file:
+    path: "{{ wazuh_stage_dir }}/{{ item.path }}"
+    state: absent
+  loop: "{{ wazuh_image_archives }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Read the marker of the staged project tree
+  slurp:
+    src: "{{ wazuh_install_root }}/.staged-manifest"
+  register: staged_marker
+  failed_when: false
+
+- name: Install the project tree
+  shell: tar -cf - -C {{ wazuh_stage_dir }}/project . | tar -xf - -C {{ wazuh_install_root }}
+  when: >-
+    (staged_marker.content | default('') | b64decode) != (wazuh_bundle_manifest.wazuh_version | string)
+
+- name: Point the tree marker at the current manifest
+  copy:
+    dest: "{{ wazuh_install_root }}/.staged-manifest"
+    content: "{{ wazuh_bundle_manifest.wazuh_version | default('') }}"
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0600"
+  when: >-
+    (staged_marker.content | default('') | b64decode) != (wazuh_bundle_manifest.wazuh_version | string)
