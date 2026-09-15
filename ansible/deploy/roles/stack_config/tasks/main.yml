@@ -14,6 +14,7 @@
 - name: Role facts for the render below
   set_fact:
     wazuh_cluster_enabled: "{{ wazuh_node_role == 'worker' or (wazuh_node_role == 'master' and wazuh_cluster_key | length > 0) }}"
+    wazuh_units_changed: false
 
 - name: Render the master specific config
   include_tasks: shared_render.yml
@@ -26,8 +27,12 @@
     owner: "{{ wazuh_user }}"
     group: "{{ wazuh_group }}"
     mode: "0644"
-  register: manager_conf_rendered
+  register: units_rendered
   when: wazuh_node_role != 'agent'
+
+- name: Track the change of the manager configuration
+  set_fact:
+    wazuh_units_changed: "{{ wazuh_units_changed or units_rendered is changed }}"
 
 - name: Render the agent Quadlet unit
   template:

@@ -92,6 +92,7 @@
     mode: "0644"
 
 - name: Render the master Quadlet units
+  register: units_rendered
   template:
     src: "{{ item }}"
     dest: "{{ wazuh_home }}/.config/containers/systemd/{{ item | regex_replace('\\.j2$', '') }}"
@@ -103,3 +104,7 @@
     - wazuh-indexer.container.j2
     - wazuh-manager.container.j2
     - wazuh-dashboard.container.j2
+
+- name: Track the change of the master units
+  set_fact:
+    wazuh_units_changed: "{{ wazuh_units_changed or units_rendered is changed }}"
