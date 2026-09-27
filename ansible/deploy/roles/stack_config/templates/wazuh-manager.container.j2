@@ -11,17 +11,17 @@ ContainerName=wazuh.manager
 Image={{ wazuh_manager_image }}
 HostName=wazuh.manager
 Network=wazuh.network
-PodmanArgs=--network-alias=wazuh.manager
+PodmanArgs=--network-alias=wazuh.manager --security-opt label=level:s0
 PublishPort={{ wazuh_agent_events_port }}:1514
 PublishPort={{ wazuh_agent_enrollment_port }}:1515
 PublishPort={{ wazuh_api_port }}:55000
 {% if wazuh_cluster_enabled %}
-PublishPort={{ wazuh_cluster_port }}:1516
+PublishPort={{ wazuh_cluster_port }}:{{ wazuh_cluster_port }}
 {% endif %}
 PublishPort={{ wazuh_syslog_port }}:514/udp
 Environment=INDEXER_URL={{ wazuh_manager_indexer_url }}
 Environment=INDEXER_USERNAME=admin
-Environment=FILEBEAT_SSL_VERIFICATION_MODE=full
+Environment=FILEBEAT_SSL_VERIFICATION_MODE={{ wazuh_filebeat_ssl_verification_mode }}
 Environment=SSL_CERTIFICATE_AUTHORITIES=/etc/ssl/root-ca.pem
 Environment=SSL_CERTIFICATE=/etc/ssl/filebeat.pem
 Environment=SSL_KEY=/etc/ssl/filebeat.key
@@ -32,10 +32,8 @@ Volume=wazuh_api_configuration:/var/ossec/api/configuration
 Volume=wazuh_etc:/var/ossec/etc
 Volume=wazuh_logs:/var/ossec/logs
 Volume=wazuh_queue:/var/ossec/queue
-Volume=wazuh_var_multigroups:/var/ossec/var/multigroups
 Volume=wazuh_integrations:/var/ossec/integrations
 Volume=wazuh_active_response:/var/ossec/active-response/bin
-Volume=wazuh_agentless:/var/ossec/agentless
 Volume=wazuh_wodles:/var/ossec/wodles
 Volume=filebeat_etc:/etc/filebeat
 Volume=filebeat_var:/var/lib/filebeat

@@ -17,10 +17,13 @@
   register: systemd_version_check
   changed_when: false
 
-- name: Assert systemd is 253 or newer
+- name: Assert systemd is new enough for user unit handling
   assert:
-    that: systemd_version_check.stdout_lines[0].split()[1] is version('253', '>=')
-    fail_msg: "systemd {{ systemd_version_check.stdout_lines[0] }} is too old, 253 or newer is required"
+    that: systemd_version_check.stdout_lines[0].split()[1] is version(wazuh_min_systemd, '>=')
+    fail_msg: >-
+      systemd {{ systemd_version_check.stdout_lines[0] }} is too old,
+      {{ wazuh_min_systemd }} or newer is required (cgroup v2 rootless user units).
+      Quadlet parsing is provided by the bundled podman generator, not systemd.
 
 - name: Check for cgroup v2
   stat:
@@ -36,7 +39,7 @@
   group:
     name: "{{ wazuh_group }}"
     system: true
-  when: wazuh_create_user
+  when: wazuh_create_user | bool
 
 - name: Ensure the wazuh user exists
   user:
@@ -45,7 +48,7 @@
     system: false
     shell: /bin/bash
     create_home: true
-  when: wazuh_create_user
+  when: wazuh_create_user | bool
   register: wazuh_user_add
 
 - name: Read the passwd entry
@@ -84,6 +87,51 @@
     path: "{{ wazuh_run_dir }}"
     timeout: 30
 
+# The certs arrive owned by whoever scp'd them (typically the admin user,
+# mode 0600). The user-level roles run as the stack user and cannot chown,
+# and the manager container needs owner access to relabel the :z mounts.
+# The root play hands the drop directory and the already-moved copies over.
+- name: Check for dropped worker certificates
+  stat:
+    path: /var/tmp/wazuh-worker-certs
+  register: worker_cert_drop_dir
+
+- name: Hand the dropped worker certificates to the stack user
+  file:
+    path: /var/tmp/wazuh-worker-certs
+    state: directory
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0700"
+    recurse: true
+  when:
+    - wazuh_node_role == 'worker'
+    - worker_cert_drop_dir.stat.exists | default(false)
+
+- name: Hand the already moved worker certificates to the stack user
+  file:
+    path: "{{ wazuh_install_root }}/config/wazuh_indexer_ssl_certs"
+    state: directory
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0755"
+    recurse: true
+  when:
+    - wazuh_node_role == 'worker'
+    - worker_cert_drop_dir.stat.exists | default(false)
+
+# Containers recreate with a fresh SELinux MCS pair on every restart while
+# named-volume contents keep the pair of whichever container created them.
+# Dropping the container and the volume data down to pair-free level s0
+# keeps named volumes readable across recreations, without weakening the
+# container_file_t type.
+- name: Normalize the SELinux level of the podman storage
+  command: chcon -R -t container_file_t -l s0 {{ item }}
+  changed_when: true
+  loop:
+    - "{{ (wazuh_storage_root | length > 0) | ternary(wazuh_storage_root ~ '/storage', '/home/' ~ wazuh_user ~ '/.local/share/containers') }}"
+  when: selinux_mode.stdout | default('Disabled') == 'Enforcing'
+
 - name: Read the current vm.max_map_count
   command: sysctl -n vm.max_map_count
   register: max_map_count
@@ -103,14 +151,20 @@
   changed_when: false
   failed_when: false
 
-- name: Require semanage when a custom storage root must be labelled
+- name: Check for semanage
   command: command -v semanage
   register: semanage_bin
-  failed_when: semanage_bin.rc != 0
+  failed_when: false
   changed_when: false
+
+- name: Install policycoreutils-python-utils when a custom storage root must be labelled
+  package:
+    name: policycoreutils-python-utils
+    state: present
   when:
     - wazuh_storage_root | length > 0
     - selinux_mode.stdout | default('Disabled') == 'Enforcing'
+    - semanage_bin.rc != 0
 
 - name: Create the storage root
   file:
@@ -151,7 +205,7 @@
   command: firewall-cmd --permanent --list-ports
   register: firewall_ports
   changed_when: false
-  when: wazuh_enable_firewall and firewalld_state.stdout == 'running'
+  when: wazuh_enable_firewall | bool and firewalld_state.stdout == 'running'
 
 - name: Open the stack ports
   command: firewall-cmd --permanent --add-port={{ item }}
@@ -166,7 +220,7 @@
     - "{{ wazuh_cluster_port }}/udp"
   when:
     - wazuh_node_role != 'agent'
-    - wazuh_enable_firewall and firewalld_state.stdout == 'running'
+    - wazuh_enable_firewall | bool and firewalld_state.stdout == 'running'
     - item not in firewall_ports.stdout | default('')
   register: firewall_add
 

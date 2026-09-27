@@ -5,3 +5,4 @@ ansible/deploy/inventory/hosts.yml
 ansible/deploy/vault/
 ansible/deploy/vendor/
 ansible/bundle/dist/
+deployment-test/

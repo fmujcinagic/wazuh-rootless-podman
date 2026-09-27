@@ -288,7 +288,7 @@
 
   <cluster>
     <name>{{ wazuh_cluster_name }}</name>
-    <node_name>{{ wazuh_worker_node_name if wazuh_node_role == 'worker' else 'node01' }}</node_name>
+    <node_name>{{ wazuh_worker_node_name if wazuh_node_role == 'worker' else wazuh_cluster_master_node_name }}</node_name>
     <node_type>{{ 'master' if wazuh_node_role != 'worker' else 'worker' }}</node_type>
     <key>{{ wazuh_cluster_key }}</key>
     <port>{{ wazuh_cluster_port }}</port>

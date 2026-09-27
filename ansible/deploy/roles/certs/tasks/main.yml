@@ -21,6 +21,21 @@
     wazuh_generate_certs: "{{ wazuh_node_role == 'master' and (wazuh_regen_certs | bool or not root_ca.stat.exists) }}"
   when: wazuh_node_role != 'agent'
 
+- name: Wipe the certificate directory for regeneration
+  file:
+    path: "{{ wazuh_cert_dir }}"
+    state: absent
+  when: wazuh_generate_certs is defined and (wazuh_generate_certs | bool)
+
+- name: Create the certificate directory
+  file:
+    path: "{{ wazuh_cert_dir }}"
+    state: directory
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0755"
+  when: wazuh_node_role != 'agent'
+
 - name: Worker certificate drop directory
   stat:
     path: /var/tmp/wazuh-worker-certs/root-ca-manager.pem
@@ -44,6 +59,24 @@
   register: worker_manager_cert
   when: wazuh_node_role == 'worker'
 
+# The certs arrive before the run, owned by whoever scp'd them. The root
+# play has already handed both the drop directory and the moved copies to
+# the stack user (preflight), so this only normalizes ownership and mode.
+- name: Assign the worker certificates to the stack user
+  file:
+    path: "{{ wazuh_cert_dir }}/{{ item }}"
+    state: file
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0600"
+  loop:
+    - root-ca-manager.pem
+    - wazuh.manager.pem
+    - wazuh.manager-key.pem
+  when:
+    - wazuh_node_role == 'worker'
+    - worker_manager_cert.stat.exists | default(false)
+
 - name: Fail when the manager certificates never arrived
   fail:
     msg: >-
@@ -54,21 +87,6 @@
   when:
     - wazuh_node_role == 'worker'
     - not (worker_manager_cert.stat.exists | default(false))
-
-- name: Wipe the certificate directory for regeneration
-  file:
-    path: "{{ wazuh_cert_dir }}"
-    state: absent
-  when: wazuh_generate_certs is defined and (wazuh_generate_certs | bool)
-
-- name: Create the certificate directory
-  file:
-    path: "{{ wazuh_cert_dir }}"
-    state: directory
-    owner: "{{ wazuh_user }}"
-    group: "{{ wazuh_group }}"
-    mode: "0755"
-  when: wazuh_node_role != 'agent'
 
 - name: Copy the offline certificate script
   copy:

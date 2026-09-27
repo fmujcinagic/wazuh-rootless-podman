@@ -26,6 +26,17 @@ wazuh_agent_events_port: 1514
 wazuh_agent_enrollment_port: 1515
 wazuh_syslog_port: 5514
 wazuh_cluster_port: 1516
+# The published cluster port is the same number used inside the container:
+# ossec.conf <port> and PublishPort must match so workers dial the master's
+# published port and land on its clusterd. Cross-node remapping is not
+# supported; give the cluster the same port on every node.
+# filebeat->indexer TLS mode (full requires a cert with matching hostname/IP
+# SAN; use "certificate" when shipping over an IP address).
+wazuh_filebeat_ssl_verification_mode: full
+
+# Minimum systemd for rootless user units. The Quadlet parsing itself is
+# done by the generator bundled with podman, so EL9's 252 is supported.
+wazuh_min_systemd: "252"
 
 # Node role. master deploys the whole stack, worker only runs the manager
 # clustered against the master (plus a local agent), agent only runs the

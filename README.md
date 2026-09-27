@@ -28,7 +28,9 @@ on 5514.
 
 ## Requirements
 
-* Podman 4.4 or newer, systemd 253 or newer, cgroup v2 on the target
+* Podman 4.4 or newer, systemd 252 or newer (EL9's 252 works; Quadlet
+  parsing comes from the generator bundled with Podman), cgroup v2 on the
+  target
 * Ansible (2.17+) with the `containers.podman` and `ansible.posix`
   collections on the machine that runs the CLI
 * At least 4 GB of RAM and `vm.max_map_count` of 262144 for the indexer
