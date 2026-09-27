@@ -54,7 +54,20 @@
   when: wazuh_node_role == 'master'
 
 # A changed unit (published ports moved, for example) only takes effect
-# with a restart, an already running container ignores it.
+# with a restart, an already running container ignores it. A marker file
+# carries the change over interrupted runs: a restarted playbook still
+# applies the restarts from the previous aborted attempt.
+- name: Look for a persisted unit-change marker
+  stat:
+    path: "{{ wazuh_install_root }}/.units-changed"
+  register: units_marker
+
+- name: Fold the persisted marker into the restart flag
+  set_fact:
+    wazuh_units_changed: >-
+      {{ (wazuh_units_changed | default(false) | bool)
+         or (units_marker.stat.exists | default(false) | bool) }}
+
 - name: Restart the units whose definition changed
   ansible.builtin.systemd_service:
     name: "{{ item }}"
@@ -64,9 +77,15 @@
     {{ ({'master': ['wazuh-indexer.service', 'wazuh-manager.service', 'wazuh-dashboard.service'],
          'worker': ['wazuh-manager.service', 'wazuh-agent.service'],
          'agent': ['wazuh-agent.service']})[wazuh_node_role] }}
-  when: wazuh_units_changed | default(false)
+  when: wazuh_units_changed | default(false) | bool
   loop_control:
     label: "{{ item }}"
+
+- name: Clear the persisted unit-change marker
+  file:
+    path: "{{ wazuh_install_root }}/.units-changed"
+    state: absent
+  when: wazuh_units_changed | default(false) | bool
 
 # A rebuilt user database has to reach the manager and dashboard too; they
 # pick the passwords up as environment at container start.

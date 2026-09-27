@@ -19,6 +19,8 @@ Environment=WAZUH_MANAGER_PORT={{ wazuh_agent_events_port }}
 Environment=WAZUH_REGISTRATION_PORT={{ wazuh_agent_enrollment_port }}
 Volume=wazuh-agent-etc:/var/ossec/etc
 Volume=wazuh-agent-queue:/var/ossec/queue
+Volume={{ wazuh_home }}/.local/state/wazuh-podman:/var/log/podman:ro
+Volume={{ wazuh_home }}/.local/state/wazuh-network:/var/log/network:ro
 Volume={{ wazuh_install_root }}/agent/ossec.conf:/wazuh-config-mount/etc/ossec.conf:z
 
 [Service]

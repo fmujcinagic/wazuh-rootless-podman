@@ -32,5 +32,6 @@
     - stack_config
     - role: secrets_podman
       when: wazuh_node_role != 'agent'
+    - hub_integrations
     - service
     - verify

@@ -89,3 +89,9 @@ wazuh_enable_firewall: true
 wazuh_regen_certs: false
 # Re-hash the indexer passwords and reload the user database.
 wazuh_regen_users: false
+
+# Integrations hub (wazuh-integration-hub: podman lifecycle monitoring and
+# network bandwidth monitoring). Point wazuh_hub_path at a hub checkout on
+# the control machine to load decoders, rules, collectors and dashboards.
+wazuh_hub_enabled: true
+wazuh_hub_path: ""

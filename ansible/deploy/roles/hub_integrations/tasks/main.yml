@@ -1,0 +1,209 @@
+---
+# Loads the wazuh-integration-hub: decoders and rules into every manager
+# through a Quadlet drop-in, the podman and network bandwidth collectors on
+# the nodes that carry an agent, and the index templates plus dashboards on
+# the master. Everything is skipped unless wazuh_hub_path points at a hub
+# checkout on the control machine.
+
+- name: Locate the integrations hub on the control machine
+  stat:
+    path: "{{ wazuh_hub_path }}"
+  delegate_to: localhost
+  become: false
+  register: hub_dir
+
+- name: Hub availability fact
+  set_fact:
+    wazuh_hub_available: "{{ wazuh_hub_enabled | bool and hub_dir.stat.exists | default(false) }}"
+
+- name: Note an unusable hub configuration
+  debug:
+    msg: >-
+      wazuh_hub_enabled with no existing wazuh_hub_path, skipping the
+      integrations hub
+  when:
+    - wazuh_hub_enabled | bool
+    - not (hub_dir.stat.exists | default(false))
+
+- name: Install the hub layout on the target
+  file:
+    path: "{{ wazuh_install_root }}/integrations/{{ item.integration }}/{{ item.kind }}"
+    state: directory
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0755"
+  loop:
+    - { integration: podman, kind: decoders }
+    - { integration: podman, kind: rules }
+    - { integration: podman, kind: scripts }
+    - { integration: network, kind: decoders }
+    - { integration: network, kind: rules }
+    - { integration: network, kind: scripts }
+  when: wazuh_hub_available | bool
+
+- name: Stage the hub decoders and rules
+  copy:
+    src: "{{ wazuh_hub_path }}/integrations/{{ item.integration }}/{{ item.kind }}/"
+    dest: "{{ wazuh_install_root }}/integrations/{{ item.integration }}/{{ item.kind }}/"
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0644"
+  loop:
+    - { integration: podman, kind: decoders }
+    - { integration: podman, kind: rules }
+    - { integration: network, kind: decoders }
+    - { integration: network, kind: rules }
+  when: wazuh_hub_available | bool
+  register: hub_files
+
+- name: Stage the collector scripts
+  copy:
+    src: "{{ wazuh_hub_path }}/integrations/{{ item.integration }}/scripts/"
+    dest: "{{ wazuh_install_root }}/integrations/{{ item.integration }}/scripts/"
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0755"
+  loop:
+    - { integration: podman }
+    - { integration: network }
+  when: wazuh_hub_available | bool
+  register: hub_scripts
+
+- name: Make the collector scripts executable
+  file:
+    path: "{{ wazuh_install_root }}/integrations/{{ item.integration }}/scripts"
+    state: directory
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0755"
+    recurse: true
+  loop:
+    - { integration: podman }
+    - { integration: network }
+  when: wazuh_hub_available | bool
+
+- name: Create the Quadlet drop-in directory
+  file:
+    path: "{{ wazuh_home }}/.config/containers/systemd/wazuh-manager.container.d"
+    state: directory
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0755"
+  when: wazuh_hub_available | bool and wazuh_node_role != 'agent'
+
+- name: Mount the hub decoders and rules into the manager
+  template:
+    src: 10-hub-integrations.conf.j2
+    dest: "{{ wazuh_home }}/.config/containers/systemd/wazuh-manager.container.d/10-hub-integrations.conf"
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0644"
+  when: wazuh_hub_available | bool and wazuh_node_role != 'agent'
+  register: manager_dropin
+
+- name: Track the drop-in change for the service restarts
+  set_fact:
+    wazuh_units_changed: "{{ wazuh_units_changed | bool or manager_dropin is changed }}"
+
+- name: Persist the unit-change marker for interrupted runs
+  file:
+    path: "{{ wazuh_install_root }}/.units-changed"
+    state: touch
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0600"
+    modification_time: preserve
+  when: manager_dropin is changed
+
+- name: Install the podman monitoring collector
+  command: "{{ wazuh_install_root }}/integrations/podman/scripts/install.sh"
+  args:
+    chdir: "{{ wazuh_install_root }}/integrations/podman/scripts"
+  environment:
+    HOME: "{{ wazuh_home }}"
+  when: wazuh_hub_available | bool and wazuh_node_role != 'master'
+  changed_when: true
+
+- name: Install the network bandwidth collector
+  command: "{{ wazuh_install_root }}/integrations/network/scripts/install.sh"
+  args:
+    chdir: "{{ wazuh_install_root }}/integrations/network/scripts"
+  environment:
+    HOME: "{{ wazuh_home }}"
+    WAZUH_MANAGER_SERVER: "{{ '127.0.0.1' if wazuh_node_role == 'worker' else wazuh_agent_manager_host | default('127.0.0.1') }}"
+  when: wazuh_hub_available | bool and wazuh_node_role != 'master'
+  changed_when: true
+
+- name: Apply the podman index template on the master
+  uri:
+    url: "https://{{ ansible_host }}:{{ wazuh_indexer_port }}/_template/podman-alerts"
+    method: PUT
+    user: admin
+    password: "{{ wazuh_indexer_password }}"
+    validate_certs: false
+    headers:
+      Content-Type: application/json
+    body_format: json
+    body: "{{ lookup('file', wazuh_hub_path ~ '/integrations/podman/dashboards/podman_index_template.json') }}"
+    status_code: [200, 409]
+  delegate_to: localhost
+  become: false
+  when: wazuh_hub_available | bool and wazuh_node_role == 'master'
+
+- name: Apply the network index template on the master
+  uri:
+    url: "https://{{ ansible_host }}:{{ wazuh_indexer_port }}/_template/network-alerts"
+    method: PUT
+    user: admin
+    password: "{{ wazuh_indexer_password }}"
+    validate_certs: false
+    headers:
+      Content-Type: application/json
+    body_format: json
+    body: "{{ lookup('file', wazuh_hub_path ~ '/integrations/network/dashboards/network_index_template.json') }}"
+    status_code: [200, 409]
+  delegate_to: localhost
+  become: false
+  when: wazuh_hub_available | bool and wazuh_node_role == 'master'
+
+- name: Import the podman dashboard on the master
+  uri:
+    url: "https://{{ ansible_host }}:{{ wazuh_dashboard_port }}/api/saved_objects/_import?overwrite=true"
+    method: POST
+    user: admin
+    password: "{{ wazuh_indexer_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    headers:
+      osd-xsrf: true
+    body_format: form-multipart
+    body:
+      file:
+        filename: podman_dashboards.ndjson
+        content_type: application/ndjson
+        content: "{{ lookup('file', wazuh_hub_path ~ '/integrations/podman/dashboards/podman_dashboards.ndjson') }}"
+    status_code: [200, 409]
+  delegate_to: localhost
+  become: false
+  when: wazuh_hub_available | bool and wazuh_node_role == 'master'
+
+- name: Import the network dashboard on the master
+  uri:
+    url: "https://{{ ansible_host }}:{{ wazuh_dashboard_port }}/api/saved_objects/_import?overwrite=true"
+    method: POST
+    user: admin
+    password: "{{ wazuh_indexer_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    headers:
+      osd-xsrf: true
+    body_format: form-multipart
+    body:
+      file:
+        filename: network_dashboards.ndjson
+        content_type: application/ndjson
+        content: "{{ lookup('file', wazuh_hub_path ~ '/integrations/network/dashboards/network_dashboards.ndjson') }}"
+    status_code: [200, 409]
+  delegate_to: localhost
+  become: false
+  when: wazuh_hub_available | bool and wazuh_node_role == 'master'

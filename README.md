@@ -123,8 +123,26 @@ consumer container is restarted.
 
 ## Loading integrations
 
-The stack is a plain Wazuh manager, so custom decoders, rules and dashboards
-can be added. The repository stays generic; add a Quadlet drop-in for the
+Integrations from the [wazuh-integration-hub](https://github.com/farismujcinagic/wazuh-integration-hub)
+(podman container lifecycle monitoring and network bandwidth monitoring) load
+through the deploy itself: point `wazuh_hub_path` at a hub checkout on the
+control machine and the `hub_integrations` playbook role -
+
+1. mounts the hub decoders and rules into every manager via a Quadlet
+   drop-in (`wazuh-manager.container.d/10-hub-integrations.conf`), so the
+   decoders are read before the built-in JSON decoder,
+2. installs the podman and network bandwidth collectors as systemd user
+   services on the nodes that carry an agent and mounts their state
+   directories into the agent container,
+3. applies the index templates and imports both dashboards on the master.
+
+```
+cd ansible/deploy && ansible-playbook deploy.yml -i inventory/hosts.yml \
+  -e wazuh_node_role=master -e wazuh_hub_path=/path/to/wazuh-integration-hub ...
+```
+
+The repository stays generic; anything outside the hub can still be added
+with a Quadlet drop-in for the
 manager instead of editing the unit. You can try this with the examples for the Podman provisioning and network bandwidth monitoring that can be found
 on my Github profile:
 

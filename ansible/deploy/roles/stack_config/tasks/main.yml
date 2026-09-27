@@ -65,3 +65,13 @@
   set_fact:
     wazuh_units_changed: "{{ wazuh_units_changed or agent_units_rendered is changed }}"
   when: wazuh_node_role != 'master'
+
+- name: Persist the unit-change marker for interrupted runs
+  file:
+    path: "{{ wazuh_install_root }}/.units-changed"
+    state: touch
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0600"
+    modification_time: preserve
+  when: wazuh_units_changed | bool
