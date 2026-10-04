@@ -130,7 +130,7 @@ consumer container is restarted.
 
 ## Loading integrations
 
-Integrations from the [wazuh-integration-hub](https://github.com/farismujcinagic/wazuh-integration-hub)
+Integrations from the [wazuh-integration-hub](https://github.com/fmujcinagic/wazuh-integration-hub)
 (podman container lifecycle monitoring, network bandwidth monitoring and
 Keycloak authentication monitoring) load through the deploy itself: point
 `wazuh_hub_path` at a hub checkout on the control machine and the
