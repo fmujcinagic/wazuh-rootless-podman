@@ -54,6 +54,8 @@ Everything goes through the interactive helper in the repository root:
    over ssh on a fresh VM, renders `ansible/deploy/inventory/hosts.yml` and
    runs the playbook.
 
+![Deploy demo](screenshots/deploy-demo.gif)
+
 The stack is deployed as a dedicated rootless `wazuh` user on the target,
 with TLS certificates generated inside the certificates-generator image, all
 secrets in the Podman secret store and linger enabled so the stack survives
@@ -88,6 +90,11 @@ systemctl --user status wazuh-indexer wazuh-manager wazuh-dashboard
 systemctl --user restart wazuh-manager
 journalctl --user -u wazuh-manager -f
 ```
+
+There is no root service and no daemon: the containers live in the `wazuh`
+user's systemd session.
+
+![The stack under the wazuh user](screenshots/rootless-ps.png)
 
 ## Node modes
 
