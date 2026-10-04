@@ -16,6 +16,17 @@
     wazuh_cluster_enabled: "{{ wazuh_node_role == 'worker' or (wazuh_node_role == 'master' and wazuh_cluster_key | length > 0) }}"
     wazuh_units_changed: false
 
+- name: Locate the integrations hub for the manager configuration
+  stat:
+    path: "{{ wazuh_hub_path }}"
+  delegate_to: localhost
+  become: false
+  register: hub_dir
+
+- name: Hub availability fact for the render
+  set_fact:
+    wazuh_hub_available: "{{ wazuh_hub_enabled | bool and hub_dir.stat.exists | default(false) }}"
+
 - name: Render the master specific config
   include_tasks: shared_render.yml
   when: wazuh_node_role == 'master'

@@ -11,7 +11,7 @@ Network=wazuh.network
 PodmanArgs=--network-alias=wazuh.indexer
 PublishPort={{ wazuh_indexer_port }}:9200
 Environment="OPENSEARCH_JAVA_OPTS=-Xms{{ wazuh_indexer_heap }} -Xmx{{ wazuh_indexer_heap }}"
-Volume=wazuh-indexer-data:/var/lib/wazuh-indexer
+Volume=wazuh-indexer-data:/var/lib/wazuh-indexer:z
 Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-indexer/config/certs/root-ca.pem:ro,z
 Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/wazuh.indexer-key.pem:/usr/share/wazuh-indexer/config/certs/wazuh.indexer.key:ro,z
 Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/wazuh.indexer.pem:/usr/share/wazuh-indexer/config/certs/wazuh.indexer.pem:ro,z

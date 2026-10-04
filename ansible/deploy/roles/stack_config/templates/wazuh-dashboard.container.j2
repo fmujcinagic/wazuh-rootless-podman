@@ -23,8 +23,8 @@ Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/wazuh.dashboard-key.pem:/u
 Volume={{ wazuh_config_dir }}/wazuh_indexer_ssl_certs/root-ca.pem:/usr/share/wazuh-dashboard/certs/root-ca.pem:ro,z
 Volume={{ wazuh_config_dir }}/wazuh_dashboard/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro,z
 Volume={{ wazuh_config_dir }}/wazuh_dashboard/wazuh.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro,z
-Volume=wazuh-dashboard-config:/usr/share/wazuh-dashboard/data/wazuh/config
-Volume=wazuh-dashboard-custom:/usr/share/wazuh-dashboard/plugins/wazuh/public/assets/custom
+Volume=wazuh-dashboard-config:/usr/share/wazuh-dashboard/data/wazuh/config:z
+Volume=wazuh-dashboard-custom:/usr/share/wazuh-dashboard/plugins/wazuh/public/assets/custom:z
 
 [Service]
 Restart=always

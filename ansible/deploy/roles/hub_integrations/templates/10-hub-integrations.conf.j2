@@ -1,7 +1,6 @@
 [Container]
-# Decoders that must be read before 0006-json_decoders.xml, and the hub
-# rule files under the user-defined ruleset.
-Volume={{ wazuh_install_root }}/integrations/podman/decoders/podman_decoders.xml:/var/ossec/ruleset/decoders/0005a-podman_decoders.xml:ro,z
-Volume={{ wazuh_install_root }}/integrations/network/decoders/network_decoders.xml:/var/ossec/ruleset/decoders/0005b-network_decoders.xml:ro,z
-Volume={{ wazuh_install_root }}/integrations/podman/rules/podman_rules.xml:/var/ossec/etc/rules/hub-podman_rules.xml:ro,z
-Volume={{ wazuh_install_root }}/integrations/network/rules/network_rules.xml:/var/ossec/etc/rules/hub-network_rules.xml:ro,z
+# Directory mounts for the hub decoders and rules. The directories are
+# referenced first in the ossec.conf ruleset so their files are evaluated
+# before the default ruleset and its built-in JSON decoder.
+Volume={{ wazuh_install_root }}/integrations/hub-decoders:/var/ossec/hub_decoders:ro,z
+Volume={{ wazuh_install_root }}/integrations/hub-rules:/var/ossec/hub_rules:ro,z

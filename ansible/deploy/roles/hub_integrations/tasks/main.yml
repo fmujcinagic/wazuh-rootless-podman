@@ -27,32 +27,45 @@
 
 - name: Install the hub layout on the target
   file:
-    path: "{{ wazuh_install_root }}/integrations/{{ item.integration }}/{{ item.kind }}"
+    path: "{{ wazuh_install_root }}/integrations/{{ item }}"
     state: directory
     owner: "{{ wazuh_user }}"
     group: "{{ wazuh_group }}"
     mode: "0755"
   loop:
-    - { integration: podman, kind: decoders }
-    - { integration: podman, kind: rules }
-    - { integration: podman, kind: scripts }
-    - { integration: network, kind: decoders }
-    - { integration: network, kind: rules }
-    - { integration: network, kind: scripts }
+    - hub-decoders
+    - hub-rules
+    - podman/scripts
+    - network/scripts
   when: wazuh_hub_available | bool
 
-- name: Stage the hub decoders and rules
+- name: Remove the decoder directories of the old layout
+  file:
+    path: "{{ wazuh_install_root }}/integrations/{{ item }}"
+    state: absent
+  loop:
+    - podman/decoders
+    - podman/rules
+    - network/decoders
+    - network/rules
+  when: wazuh_hub_available | bool
+  loop_control:
+    label: "{{ item }}"
+
+- name: Stage the hub decoders and rules into the shared directories
   copy:
-    src: "{{ wazuh_hub_path }}/integrations/{{ item.integration }}/{{ item.kind }}/"
-    dest: "{{ wazuh_install_root }}/integrations/{{ item.integration }}/{{ item.kind }}/"
+    src: "{{ wazuh_hub_path }}/integrations/{{ item.integration }}/{{ item.kind }}/{{ item.file }}"
+    dest: "{{ wazuh_install_root }}/integrations/{{ item.dest }}/"
     owner: "{{ wazuh_user }}"
     group: "{{ wazuh_group }}"
     mode: "0644"
   loop:
-    - { integration: podman, kind: decoders }
-    - { integration: podman, kind: rules }
-    - { integration: network, kind: decoders }
-    - { integration: network, kind: rules }
+    - { integration: podman, kind: decoders, file: podman_decoders.xml, dest: hub-decoders }
+    - { integration: podman, kind: rules, file: podman_rules.xml, dest: hub-rules }
+    - { integration: network, kind: decoders, file: network_decoders.xml, dest: hub-decoders }
+    - { integration: network, kind: rules, file: network_rules.xml, dest: hub-rules }
+    - { integration: keycloak, kind: decoders, file: keycloak_decoders.xml, dest: hub-decoders }
+    - { integration: keycloak, kind: rules, file: keycloak_rules.xml, dest: hub-rules }
   when: wazuh_hub_available | bool
   register: hub_files
 
@@ -82,6 +95,19 @@
     - { integration: network }
   when: wazuh_hub_available | bool
 
+- name: Prepare the collector state directories the agent mounts
+  file:
+    path: "{{ wazuh_home }}/.local/state/{{ item }}"
+    state: directory
+    owner: "{{ wazuh_user }}"
+    group: "{{ wazuh_group }}"
+    mode: "0755"
+  loop:
+    - wazuh-podman
+    - wazuh-network
+    - keycloak
+  when: wazuh_hub_available | bool
+
 - name: Create the Quadlet drop-in directory
   file:
     path: "{{ wazuh_home }}/.config/containers/systemd/wazuh-manager.container.d"
@@ -101,9 +127,13 @@
   when: wazuh_hub_available | bool and wazuh_node_role != 'agent'
   register: manager_dropin
 
-- name: Track the drop-in change for the service restarts
+- name: Track the hub changes for the service restarts
   set_fact:
-    wazuh_units_changed: "{{ wazuh_units_changed | bool or manager_dropin is changed }}"
+    wazuh_units_changed: >-
+      {{ wazuh_units_changed | bool
+         or manager_dropin is changed
+         or (hub_files is defined and hub_files is changed)
+         or (hub_scripts is defined and hub_scripts is changed) }}
 
 - name: Persist the unit-change marker for interrupted runs
   file:
@@ -113,7 +143,7 @@
     group: "{{ wazuh_group }}"
     mode: "0600"
     modification_time: preserve
-  when: manager_dropin is changed
+  when: wazuh_units_changed | bool
 
 - name: Install the podman monitoring collector
   command: "{{ wazuh_install_root }}/integrations/podman/scripts/install.sh"
@@ -203,6 +233,43 @@
         filename: network_dashboards.ndjson
         content_type: application/ndjson
         content: "{{ lookup('file', wazuh_hub_path ~ '/integrations/network/dashboards/network_dashboards.ndjson') }}"
+    status_code: [200, 409]
+  delegate_to: localhost
+  become: false
+  when: wazuh_hub_available | bool and wazuh_node_role == 'master'
+
+- name: Apply the keycloak index template on the master
+  uri:
+    url: "https://{{ ansible_host }}:{{ wazuh_indexer_port }}/_template/keycloak-alerts"
+    method: PUT
+    user: admin
+    password: "{{ wazuh_indexer_password }}"
+    validate_certs: false
+    headers:
+      Content-Type: application/json
+    body_format: json
+    body: "{{ lookup('file', wazuh_hub_path ~ '/integrations/keycloak/dashboards/keycloak_index_template.json') }}"
+    status_code: [200, 409]
+  delegate_to: localhost
+  become: false
+  when: wazuh_hub_available | bool and wazuh_node_role == 'master'
+
+- name: Import the keycloak dashboard on the master
+  uri:
+    url: "https://{{ ansible_host }}:{{ wazuh_dashboard_port }}/api/saved_objects/_import?overwrite=true"
+    method: POST
+    user: admin
+    password: "{{ wazuh_indexer_password }}"
+    force_basic_auth: true
+    validate_certs: false
+    headers:
+      osd-xsrf: true
+    body_format: form-multipart
+    body:
+      file:
+        filename: keycloak_dashboards.ndjson
+        content_type: application/ndjson
+        content: "{{ lookup('file', wazuh_hub_path ~ '/integrations/keycloak/dashboards/keycloak_dashboards.ndjson') }}"
     status_code: [200, 409]
   delegate_to: localhost
   become: false

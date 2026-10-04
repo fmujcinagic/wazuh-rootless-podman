@@ -96,7 +96,7 @@
   </sca>
 
   <vulnerability-detection>
-    <enabled>yes</enabled>
+    <enabled>{{ 'yes' if wazuh_vulnerability_detection | bool else 'no' }}</enabled>
     <index-status>yes</index-status>
     <feed-update-interval>60m</feed-update-interval>
   </vulnerability-detection>
@@ -248,6 +248,11 @@
   </localfile>
 
   <ruleset>
+    <!-- User-defined ruleset -->
+    {% if wazuh_hub_available | default(false) | bool %}
+    <decoder_dir>hub_decoders</decoder_dir>
+    <rule_dir>hub_rules</rule_dir>
+    {% endif %}
     <!-- Default ruleset -->
     <decoder_dir>ruleset/decoders</decoder_dir>
     <rule_dir>ruleset/rules</rule_dir>

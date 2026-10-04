@@ -124,17 +124,19 @@ consumer container is restarted.
 ## Loading integrations
 
 Integrations from the [wazuh-integration-hub](https://github.com/farismujcinagic/wazuh-integration-hub)
-(podman container lifecycle monitoring and network bandwidth monitoring) load
-through the deploy itself: point `wazuh_hub_path` at a hub checkout on the
-control machine and the `hub_integrations` playbook role -
+(podman container lifecycle monitoring, network bandwidth monitoring and
+Keycloak authentication monitoring) load through the deploy itself: point
+`wazuh_hub_path` at a hub checkout on the control machine and the
+`hub_integrations` playbook role -
 
-1. mounts the hub decoders and rules into every manager via a Quadlet
+1. stages the hub decoders and rules into shared `hub-decoders` and
+   `hub-rules` directories on every manager and mounts them via a Quadlet
    drop-in (`wazuh-manager.container.d/10-hub-integrations.conf`), so the
    decoders are read before the built-in JSON decoder,
 2. installs the podman and network bandwidth collectors as systemd user
    services on the nodes that carry an agent and mounts their state
-   directories into the agent container,
-3. applies the index templates and imports both dashboards on the master.
+   directories, plus the Keycloak log directory, into the agent container,
+3. applies the index templates and imports the dashboards on the master.
 
 ```
 cd ansible/deploy && ansible-playbook deploy.yml -i inventory/hosts.yml \

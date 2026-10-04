@@ -53,6 +53,11 @@ wazuh_manager_indexer_url: https://wazuh.indexer:9200
 
 wazuh_indexer_heap: "1g"
 
+# The vulnerability scanner downloads all provider feeds into the manager
+# queue volume (well over 10 GB) and keeps growing them. Turn it off on
+# storage constrained hosts.
+wazuh_vulnerability_detection: false
+
 # Image references. These must match what build-bundle.yml exported.
 wazuh_indexer_image: "docker.io/wazuh/wazuh-indexer:{{ wazuh_version }}"
 wazuh_manager_image: "docker.io/wazuh/wazuh-manager:{{ wazuh_version }}"
